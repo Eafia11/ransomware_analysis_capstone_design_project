@@ -33,41 +33,80 @@
 
 ---
 
-### 2. marmos91-ransomware.zip
+### 2. goliate-hidden-tear.zip
 
-- **원본 레포**: https://github.com/marmos91/ransomware
-- **언어**: Python
-- **대상 플랫폼**: Cross-platform (교육/데모용)
-- **크기**: 약 35 KB
-- **SHA256**: `70e481f1c5f10d5e93c40b3c86cb20364014fac07cf768a8ebe32aeeaace9b78`
+- **원본 레포**: https://github.com/goliate/hidden-tear
+- **언어**: C# (.NET Framework)
+- **대상 플랫폼**: Windows
+- **크기**: 약 289 KB
+- **SHA256**: `18e879d91c47ab163e6707aa91f5203796c2e11cf14fe0be088c055a832b3c06`
 
 **개요**
-랜섬웨어 공격을 로컬에서 시뮬레이션하기 위한 단순 데모 도구. 실제 네트워크 동작 없이 파일 암호화/복호화 흐름을 학습하기 위한 용도로 설계되었다. 간단한 구조 덕분에 소스 분석과 이벤트 로그 매핑 학습에 적합하다.
+2015년 utkusen에 의해 최초 공개된 **세계 최초의 오픈소스 랜섬웨어**. C#으로 작성되어 Visual Studio 또는 `msbuild`로 Windows 네이티브 `.exe`로 빌드된다. AES 알고리즘으로 지정된 디렉토리의 파일을 암호화하고, 키는 HTTP POST로 원격 서버에 전송하는 구조. 학술 논문 및 악성코드 분석 교재에 가장 많이 인용되는 샘플.
+
+**빌드 방법 (VM 내부)**
+```powershell
+# Visual Studio 또는 Build Tools 설치 후
+msbuild hidden-tear\hidden-tear.sln /p:Configuration=Release
+```
 
 **Sysmon 관찰 포인트**
-- Event ID 1: Python 인터프리터 프로세스 실행 (`python.exe` 하위 프로세스)
-- Event ID 11: 암호화 파일 생성
-- Event ID 23: 원본 파일 삭제
-- Event ID 7 (Image Loaded): `cryptography`, `pycryptodome` 등 암호화 모듈 로드 여부
+- Event ID 1: `hidden-tear.exe` 실행, Parent는 탐색기/CMD
+- Event ID 11: 암호화된 파일 생성 (`.locked` 확장자)
+- Event ID 3: 키 전송을 위한 HTTP POST 트래픽
+- Event ID 13: 바탕화면 변경 관련 레지스트리 쓰기(변형 시)
 
 ---
 
-### 3. HugoLB0-Ransom0.zip
+### 3. hackthedev-teardrop.zip
 
-- **원본 레포**: https://github.com/HugoLB0/Ransom0
-- **언어**: Python
-- **대상 플랫폼**: Cross-platform
-- **크기**: 약 8 KB
-- **SHA256**: `422c5055e95987dc032aa5d74ac3cdf03bed1a3f3610ca92241e9aa19606ddb9`
+- **원본 레포**: https://github.com/hackthedev/teardrop
+- **언어**: C# (.NET)
+- **대상 플랫폼**: Windows
+- **크기**: 약 16.6 MB
+- **SHA256**: `ba82fd082c95c8f0fbff72dcb6d10d6d3e4b4984455931bb89de9365fe6e2448`
 
 **개요**
-사용자 데이터를 탐색하고 암호화하는 단순 구조의 Python 오픈소스 교육용 랜섬웨어. 코드 규모가 작아 가장 먼저 분석하기 좋은 입문용 샘플이다.
+교육 목적으로 작성된 C# 랜섬웨어 프로젝트. HiddenTear 계열에 비해 최근 활동이 있는 프로젝트이며, 코드 구조가 모던 .NET 기반으로 구성되어 있다. Visual Studio에서 빌드 시 단일 `.exe`로 산출된다.
 
 **Sysmon 관찰 포인트**
-- Event ID 1: `python.exe` 실행 및 인자
-- Event ID 11: 순회하며 생성되는 암호화 파일
-- Event ID 23: 원본 파일 삭제 이벤트의 연속 발생 패턴
-- Event ID 2 (File Creation Time Changed): 타임스탬프 조작 여부
+- Event ID 1: `teardrop.exe` 실행 및 명령행 인자
+- Event ID 11: 파일 생성 이벤트(암호화본)
+- Event ID 23: 원본 파일 삭제
+- Event ID 22 (DNS Query): C2 도메인 쿼리 여부
+
+---
+
+### 4. jaenudin86-CryptoJoker.zip
+
+- **원본 레포**: https://github.com/jaenudin86/CryptoJoker
+- **언어**: C# (.NET Framework)
+- **대상 플랫폼**: Windows
+- **크기**: 약 4.8 MB
+- **SHA256**: `7f4440b1ecf914b282f2d78b69f9b57b4ac15dc2e2a850a73232b58a21fd7611`
+
+**개요**
+교육 목적 전용으로 공개된 Managed C# 랜섬웨어. 파일 열람 → 암호화 → 몸값 메모 표시의 고전적인 흐름을 깔끔하게 구현하고 있으며, 소스 규모가 적당해 정적 분석과 동적 분석을 함께 학습하기 좋다.
+
+**Sysmon 관찰 포인트**
+- Event ID 1: `CryptoJoker.exe` 실행
+- Event ID 11: 암호화본 파일 생성(확장자 변경)
+- Event ID 23: 원본 파일 삭제
+- Event ID 7: .NET 런타임(`clr.dll`, `mscoreei.dll`) 로드
+- Event ID 13: 자동 실행 레지스트리(`Run` 키) 설정 여부
+
+---
+
+## Windows 실행 가능 여부 요약
+
+| 샘플 | 언어 | 실행 방식 | Windows 네이티브 |
+|---|---|---|---|
+| mauri870-ransomware | Go | `go build` → `.exe` | ✅ |
+| goliate-hidden-tear | C# | `msbuild` → `.exe` | ✅ |
+| hackthedev-teardrop | C# | Visual Studio → `.exe` | ✅ |
+| jaenudin86-CryptoJoker | C# | Visual Studio → `.exe` | ✅ |
+
+모든 샘플은 Windows 가상머신에서 네이티브 `.exe`로 빌드·실행되며, Sysmon 이벤트 로그 기반 행위 분석에 적합하다.
 
 ---
 
