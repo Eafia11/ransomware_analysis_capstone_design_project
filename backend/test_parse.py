@@ -6,6 +6,11 @@ from app.services.winlogbeat_parser import (
     save_json,
 )
 
+from app.services.rule_detector import (
+    detect_malicious_chains,
+    filter_suspicious_results,
+)
+
 INPUT_FILE = "samples/winlogbeat_sample.json"
 
 OUTPUT_ALL = "data/parsed_logs.json"
@@ -13,6 +18,8 @@ OUTPUT_SYSMON = "data/sysmon_only.json"
 OUTPUT_SYSMON_CORE = "data/sysmon_core.json"
 OUTPUT_ATTACK_CHAINS = "data/attack_chains.json"
 OUTPUT_ABSTRACTED_CHAINS = "data/abstracted_attack_chains.json"
+OUTPUT_RULE_RESULTS = "data/rule_detection_results.json"
+OUTPUT_SUSPICIOUS_ONLY = "data/suspicious_only.json"
 
 
 def main():
@@ -43,7 +50,28 @@ def main():
     abstracted_attack_chains = build_abstracted_attack_chains(attack_chains)
     save_json(abstracted_attack_chains, OUTPUT_ABSTRACTED_CHAINS)
 
-    # 6. 발표용 출력
+    # 6. 규칙 기반 탐지
+    rule_results = detect_malicious_chains(attack_chains)
+    save_json(rule_results, OUTPUT_RULE_RESULTS)
+
+    suspicious_only = filter_suspicious_results(rule_results)
+    save_json(suspicious_only, OUTPUT_SUSPICIOUS_ONLY)
+
+    print(f"규칙 기반 분석 결과 개수: {len(rule_results)}")
+    print(f"의심 체인 개수: {len(suspicious_only)}")
+    print(f"저장 완료: {OUTPUT_RULE_RESULTS}")
+    print(f"저장 완료: {OUTPUT_SUSPICIOUS_ONLY}")
+
+    if rule_results:
+        sample = rule_results[0]
+        print("\n규칙 기반 탐지 샘플")
+        print(f"process_guid: {sample.get('process_guid')}")
+        print(f"image: {sample.get('image')}")
+        print(f"score: {sample.get('score')}")
+        print(f"label: {sample.get('label')}")
+        print(f"reasons: {sample.get('reasons')}")
+
+    # 7. 발표용 출력
     print("===== 로그 분석 MVP 실행 결과 =====")
     print(f"전체 로그 개수: {len(parsed)}")
     print(f"Sysmon 로그 개수: {len(sysmon_logs)}")
