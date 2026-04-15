@@ -260,8 +260,48 @@ def build_process_groups(events: list[dict[str, Any]]) -> dict[str, list[dict[st
 
     return dict(grouped)
 
+def build_process_index(events: list[dict[str, Any]]) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
+    
+    process_info_map: dict[str, dict[str, Any]] = {}
+    children_map: dict[str, list[str]] = defaultdict(list)
 
-def summarize_process_group(process_guid: str, events: list[dict[str, Any]]) -> dict[str, Any]:
+    for event in events:
+        if str(event.get("event_id")) != "1":
+            continue
+
+        process_guid = event.get("process_guid")
+        parent_process_guid = event.get("parent_process_guid")
+
+        if not process_guid:
+            continue
+
+        if process_guid not in process_info_map:
+            process_info_map[process_guid] = {
+                "process_guid": process_guid,
+                "process_id": event.get("process_id"),
+                "image": event.get("image"),
+                "command_line": event.get("command_line"),
+                "parent_process_guid": parent_process_guid,
+                "parent_process_id": event.get("parent_process_id"),
+                "parent_image": event.get("parent_image"),
+                "parent_command_line": event.get("parent_command_line"),
+                "user": event.get("user"),
+                "timestamp": event.get("timestamp"),
+            }
+
+        if (
+        parent_process_guid
+        and parent_process_guid != "{GUID-REDACTED}"
+        and process_guid != "{GUID-REDACTED}"
+        and parent_process_guid != process_guid
+        ):
+            if process_guid not in children_map[parent_process_guid]:
+                children_map[parent_process_guid].append(process_guid)
+
+    return process_info_map, dict(children_map)
+
+
+def summarize_process_group(group_key: str, events: list[dict[str, Any]]) -> dict[str, Any]:
     first = events[0] if events else {}
 
     process_create = None
@@ -272,13 +312,20 @@ def summarize_process_group(process_guid: str, events: list[dict[str, Any]]) -> 
 
     base = process_create or first
 
+    real_process_guid = base.get("process_guid")
+
     return {
-        "process_guid": process_guid,
+        "group_key": group_key,
+        "process_guid": real_process_guid,
+        "process_id": base.get("process_id"),
+        "parent_process_guid": base.get("parent_process_guid"),
+        "parent_process_id": base.get("parent_process_id"),
         "event_count": len(events),
         "start_time": first.get("timestamp"),
         "image": base.get("image"),
         "command_line": base.get("command_line"),
         "parent_image": base.get("parent_image"),
+        "parent_command_line": base.get("parent_command_line"),
         "user": base.get("user"),
         "events": events,
     }
@@ -290,10 +337,27 @@ def build_attack_chain_candidates(sysmon_core_events: list[dict[str, Any]]) -> l
     간단한 공격 체인 후보를 만든다.
     """
     groups = build_process_groups(sysmon_core_events)
+    process_info_map, children_map = build_process_index(sysmon_core_events)
+
     chains: list[dict[str, Any]] = []
 
-    for process_guid, events in groups.items():
-        summary = summarize_process_group(process_guid, events)
+    for group_key, events in groups.items():
+        summary = summarize_process_group(group_key, events)
+
+        parent_guid = summary.get("parent_process_guid")
+        parent_info = process_info_map.get(parent_guid, {}) if parent_guid else {}
+
+        child_processes = []
+        for child_guid in children_map.get(summary.get("process_guid"), []):
+            child_info = process_info_map.get(child_guid, {})
+            child_processes.append({
+                "process_guid": child_guid,
+                "process_id": child_info.get("process_id"),
+                "image": child_info.get("image"),
+                "command_line": child_info.get("command_line"),
+                "user": child_info.get("user"),
+                "timestamp": child_info.get("timestamp"),
+            })
 
         actions: list[dict[str, Any]] = []
         for event in events:
@@ -313,15 +377,25 @@ def build_attack_chain_candidates(sysmon_core_events: list[dict[str, Any]]) -> l
             actions.append(action)
 
         chains.append({
-            "process_guid": process_guid,
-            "image": summary.get("image"),
-            "command_line": summary.get("command_line"),
-            "parent_image": summary.get("parent_image"),
-            "user": summary.get("user"),
-            "start_time": summary.get("start_time"),
-            "event_count": summary.get("event_count"),
-            "actions": actions,
-        })
+            "group_key": summary.get("group_key"),
+        "process_guid": summary.get("process_guid"),
+        "process_id": summary.get("process_id"),
+        "image": summary.get("image"),
+        "command_line": summary.get("command_line"),
+
+        "parent_process": {
+            "process_guid": parent_guid,
+            "process_id": summary.get("parent_process_id"),
+            "image": summary.get("parent_image") or parent_info.get("image"),
+            "command_line": summary.get("parent_command_line") or parent_info.get("command_line"),
+        } if parent_guid else None,
+
+        "child_processes": child_processes,
+        "user": summary.get("user"),
+        "start_time": summary.get("start_time"),
+        "event_count": summary.get("event_count"),
+        "actions": actions,
+    })
 
     chains.sort(key=lambda x: x.get("start_time") or "")
     return chains
@@ -366,9 +440,11 @@ def build_abstracted_attack_chains(attack_chains: list[dict[str, Any]]) -> list[
 
         results.append({
             "process_guid": chain.get("process_guid"),
+            "process_id": chain.get("process_id"),
             "image": chain.get("image"),
             "command_line": chain.get("command_line"),
-            "parent_image": chain.get("parent_image"),
+            "parent_process": chain.get("parent_process"),
+            "child_processes": chain.get("child_processes", []),
             "user": chain.get("user"),
             "start_time": chain.get("start_time"),
             "event_count": chain.get("event_count"),
