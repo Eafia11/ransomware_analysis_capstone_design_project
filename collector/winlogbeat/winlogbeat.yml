@@ -1,0 +1,29 @@
+winlogbeat.event_logs:
+  - name: Application
+    ignore_older: 72h
+
+  - name: System
+    ignore_older: 72h
+
+  - name: Security
+    ignore_older: 72h
+
+  - name: Microsoft-Windows-Sysmon/Operational
+    ignore_older: 72h
+
+  - name: Microsoft-Windows-PowerShell/Operational
+    ignore_older: 72h
+
+output.file:
+  path: "C:/ProgramData/Winlogbeat/exported"
+  filename: winlogbeat
+  rotate_every_kb: 10240
+  number_of_files: 5
+
+logging.level: info
+logging.to_files: true
+logging.files:
+  path: C:/ProgramData/Winlogbeat/logs
+  name: winlogbeat
+  keepfiles: 7
+  permissions: 0644

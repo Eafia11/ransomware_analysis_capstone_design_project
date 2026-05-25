@@ -1,0 +1,9 @@
+{
+  "name": "ransomware-analysis-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"Frontend stack is not configured yet.\"",
+    "build": "echo \"Frontend stack is not configured yet.\""
+  }
+}
