@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>이벤트 로그 기반 랜섬웨어 공격 체인 재구성 시스템</title>
+  <style>
+    /* ===== 기본 설정 ===== */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #0d1117;
+      color: #c9d1d9;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ===== 헤더 ===== */
+    header {
+      width: 100%;
+      background-color: #161b22;
+      border-bottom: 1px solid #30363d;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header .logo {
+      font-size: 22px;
+      font-weight: 700;
+      color: #58a6ff;
+      letter-spacing: 1px;
+    }
+
+    header .subtitle {
+      font-size: 13px;
+      color: #8b949e;
+    }
+
+    /* ===== 메인 컨테이너 ===== */
+    .container {
+      width: 100%;
+      max-width: 900px;
+      padding: 40px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+    }
+
+    /* ===== 섹션 제목 ===== */
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #8b949e;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+
+    /* ===== 업로드 영역 ===== */
+    .upload-card {
+      background-color: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 32px;
+    }
+
+    .drop-zone {
+      border: 2px dashed #30363d;
+      border-radius: 10px;
+      padding: 48px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background-color: #0d1117;
+    }
+
+    .drop-zone:hover,
+    .drop-zone.dragover {
+      border-color: #58a6ff;
+      background-color: #1c2333;
+    }
+
+    .drop-zone .icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .drop-zone .main-text {
+      font-size: 16px;
+      font-weight: 600;
+      color: #e6edf3;
+      margin-bottom: 8px;
+    }
+
+    .drop-zone .sub-text {
+      font-size: 13px;
+      color: #8b949e;
+      margin-bottom: 20px;
+    }
+
+    .drop-zone .ext-badge {
+      display: inline-block;
+      background-color: #1f3a5f;
+      color: #58a6ff;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+      border: 1px solid #2d5a8e;
+    }
+
+    /* 숨겨진 파일 입력 */
+    #fileInput {
+      display: none;
+    }
+
+    /* ===== 선택된 파일 정보 ===== */
+    .file-info {
+      display: none;
+      margin-top: 20px;
+      background-color: #1c2333;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 16px;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .file-info.show {
+      display: flex;
+    }
+
+    .file-info .file-icon {
+      font-size: 28px;
+    }
+
+    .file-info .file-details {
+      flex: 1;
+    }
+
+    .file-info .file-name {
+      font-size: 14px;
+      font-weight: 600;
+      color: #e6edf3;
+    }
+
+    .file-info .file-size {
+      font-size: 12px;
+      color: #8b949e;
+      margin-top: 2px;
+    }
+
+    .file-info .remove-btn {
+      background: none;
+      border: none;
+      color: #8b949e;
+      cursor: pointer;
+      font-size: 18px;
+      transition: color 0.2s;
+    }
+
+    .file-info .remove-btn:hover {
+      color: #f85149;
+    }
+
+    /* ===== 업로드 버튼 ===== */
+    .upload-btn {
+      margin-top: 20px;
+      width: 100%;
+      padding: 14px;
+      background-color: #238636;
+      color: #ffffff;
+      font-size: 15px;
+      font-weight: 600;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .upload-btn:hover:not(:disabled) {
+      background-color: #2ea043;
+    }
+
+    .upload-btn:disabled {
+      background-color: #21262d;
+      color: #484f58;
+      cursor: not-allowed;
+    }
+
+    /* ===== 진행 상태 ===== */
+    .status-card {
+      background-color: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 24px 32px;
+      display: none;
+    }
+
+    .status-card.show {
+      display: block;
+    }
+
+    .status-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .step {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .step-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+      background-color: #21262d;
+      color: #8b949e;
+      border: 1px solid #30363d;
+    }
+
+    .step.active .step-icon {
+      background-color: #1f3a5f;
+      color: #58a6ff;
+      border-color: #2d5a8e;
+      animation: pulse 1.5s infinite;
+    }
+
+    .step.done .step-icon {
+      background-color: #1a3a2a;
+      color: #3fb950;
+      border-color: #238636;
+    }
+
+    .step.error .step-icon {
+      background-color: #3d1a1a;
+      color: #f85149;
+      border-color: #6e2a2a;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .step-label {
+      font-size: 14px;
+      color: #8b949e;
+    }
+
+    .step.active .step-label {
+      color: #e6edf3;
+      font-weight: 600;
+    }
+
+    .step.done .step-label {
+      color: #3fb950;
+    }
+
+    .step.error .step-label {
+      color: #f85149;
+    }
+
+    /* ===== 결과 영역 ===== */
+    .result-card {
+      background-color: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 32px;
+      display: none;
+    }
+
+    .result-card.show {
+      display: block;
+    }
+
+    .result-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .result-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #e6edf3;
+    }
+
+    .result-meta {
+      display: flex;
+      gap: 10px;
+    }
+
+    .badge {
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 20px;
+    }
+
+    .badge-green {
+      background-color: #1a3a2a;
+      color: #3fb950;
+      border: 1px solid #238636;
+    }
+
+    .badge-blue {
+      background-color: #1f3a5f;
+      color: #58a6ff;
+      border: 1px solid #2d5a8e;
+    }
+
+    /* 탭 */
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #30363d;
+      padding-bottom: 0;
+    }
+
+    .tab-btn {
+      padding: 8px 16px;
+      background: none;
+      border: none;
+      color: #8b949e;
+      font-size: 14px;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: all 0.2s;
+    }
+
+    .tab-btn:hover {
+      color: #e6edf3;
+    }
+
+    .tab-btn.active {
+      color: #58a6ff;
+      border-bottom-color: #58a6ff;
+      font-weight: 600;
+    }
+
+    /* 결과 텍스트 */
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .result-text {
+      background-color: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 20px;
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 13px;
+      line-height: 1.8;
+      color: #c9d1d9;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+
+    .result-text::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .result-text::-webkit-scrollbar-track {
+      background: #161b22;
+    }
+
+    .result-text::-webkit-scrollbar-thumb {
+      background: #30363d;
+      border-radius: 3px;
+    }
+
+    /* 복사 / 다운로드 버튼 */
+    .result-actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 16px;
+    }
+
+    .action-btn {
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .btn-outline {
+      background: none;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+    }
+
+    .btn-outline:hover {
+      background-color: #21262d;
+      border-color: #8b949e;
+    }
+
+    /* ===== 에러 메시지 ===== */
+    .error-msg {
+      display: none;
+      background-color: #3d1a1a;
+      border: 1px solid #6e2a2a;
+      border-radius: 8px;
+      padding: 16px;
+      color: #f85149;
+      font-size: 14px;
+      margin-top: 16px;
+    }
+
+    .error-msg.show {
+      display: block;
+    }
+
+    /* ===== 푸터 ===== */
+    footer {
+      margin-top: auto;
+      padding: 20px;
+      color: #484f58;
+      font-size: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 헤더 -->
+  <header>
+    <div>
+      <div class="logo">Hansung NetGuardian</div>
+      <div class="subtitle">이벤트 로그 기반 랜섬웨어 공격 체인 재구성 시스템</div>
+    </div>
+  </header>
+
+  <!-- 메인 컨테이너 -->
+  <div class="container">
+
+    <!-- 업로드 섹션 -->
+    <div class="upload-card">
+      <div class="section-title">파일 업로드</div>
+
+      <!-- 드래그 앤 드롭 영역 -->
+      <div class="drop-zone" id="dropZone">
+        <div class="icon">📂</div>
+        <div class="main-text">파일을 여기에 드래그하거나 클릭하여 선택하세요</div>
+        <div class="sub-text">분석할 로그/이벤트 파일을 선택해 주세요</div>
+        <span class="ext-badge">.json / .jsonl / .log / .txt 파일만 허용</span>
+      </div>
+
+      <!-- 숨겨진 파일 입력 -->
+      <input type="file" id="fileInput" accept=".json,.jsonl,.log,.txt" />
+
+      <!-- 선택된 파일 정보 -->
+      <div class="file-info" id="fileInfo">
+        <div class="file-icon">⚙️</div>
+        <div class="file-details">
+          <div class="file-name" id="fileName">-</div>
+          <div class="file-size" id="fileSize">-</div>
+        </div>
+        <button class="remove-btn" id="removeBtn" title="파일 제거">✕</button>
+      </div>
+
+      <!-- 에러 메시지 -->
+      <div class="error-msg" id="errorMsg">⚠️ <span id="errorText"></span></div>
+
+      <!-- 업로드 버튼 -->
+      <button class="upload-btn" id="uploadBtn" disabled>
+        <span></span> 분석 시작
+      </button>
+    </div>
+
+    <!-- 진행 상태 섹션 -->
+    <div class="status-card" id="statusCard">
+      <div class="section-title">⚡ 진행 상태</div>
+      <div class="status-steps">
+        <div class="step" id="step1">
+          <div class="step-icon">1</div>
+          <div class="step-label">서버에 파일 업로드 중...</div>
+        </div>
+        <div class="step" id="step2">
+          <div class="step-icon">2</div>
+          <div class="step-label">서버에서 파일 분석 중...</div>
+        </div>
+        <div class="step" id="step3">
+          <div class="step-icon">3</div>
+          <div class="step-label">결과 수신 완료</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 결과 섹션 -->
+    <div class="result-card" id="resultCard">
+      <div class="result-header">
+        <div class="result-title">📊 분석 결과</div>
+        <div class="result-meta">
+          <span class="badge badge-green">✔ 분석 완료</span>
+          <span class="badge badge-blue" id="resultTypeBadge">TXT</span>
+        </div>
+      </div>
+
+      <!-- 탭 -->
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="raw">원본 텍스트</button>
+        <button class="tab-btn" data-tab="info">파일 정보</button>
+      </div>
+
+      <!-- 탭 내용: 원본 텍스트 -->
+      <div class="tab-content active" id="tab-raw">
+        <div class="result-text" id="resultText">결과가 여기에 표시됩니다.</div>
+        <div class="result-actions">
+          <button class="action-btn btn-outline" id="copyBtn">📋 복사</button>
+          <button class="action-btn btn-outline" id="downloadBtn">💾 다운로드</button>
+        </div>
+      </div>
+
+      <!-- 탭 내용: 파일 정보 -->
+      <div class="tab-content" id="tab-info">
+        <div class="result-text" id="resultInfo">파일 정보가 여기에 표시됩니다.</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 푸터 -->
+  <footer>
+    © 2026 Hansung NetGuardian | AWS Cloud Server
+  </footer>
+
+  <script>
+    // =============================================
+    // 서버 API 주소 설정
+    // =============================================
+    const BASE_URL    = "http://3.26.2.21:8000";
+    const UPLOAD_URL  = `${BASE_URL}/upload`;                // POST
+    const ANALYZE_URL = (id) => `${BASE_URL}/analyze/${id}`; // POST
+    const RESULT_URL  = (id) => `${BASE_URL}/result/${id}`;  // GET
+
+    // =============================================
+    // 변수 선언
+    // =============================================
+    let selectedFile = null;
+
+    const dropZone    = document.getElementById('dropZone');
+    const fileInput   = document.getElementById('fileInput');
+    const fileInfo    = document.getElementById('fileInfo');
+    const fileName    = document.getElementById('fileName');
+    const fileSize    = document.getElementById('fileSize');
+    const removeBtn   = document.getElementById('removeBtn');
+    const uploadBtn   = document.getElementById('uploadBtn');
+    const errorMsg    = document.getElementById('errorMsg');
+    const errorText   = document.getElementById('errorText');
+    const statusCard  = document.getElementById('statusCard');
+    const resultCard  = document.getElementById('resultCard');
+    const resultText  = document.getElementById('resultText');
+    const resultInfo  = document.getElementById('resultInfo');
+    const resultTypeBadge = document.getElementById('resultTypeBadge');
+    const copyBtn     = document.getElementById('copyBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    // =============================================
+    // 파일 크기 포맷 함수
+    // =============================================
+    function formatFileSize(bytes) {
+      if (bytes < 1024) return bytes + ' B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+      return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
+    // =============================================
+    // 파일 선택 처리 함수
+    // =============================================
+    function handleFile(file) {
+      const lowerName = file.name.toLowerCase();
+      const allowedExts = ['.json', '.jsonl', '.log', '.txt'];
+
+      const isAllowed = allowedExts.some(ext => lowerName.endsWith(ext));
+      if (!isAllowed) {
+        showError('.json / .jsonl / .log / .txt 파일만 업로드 가능합니다.');
+        return;
+      }
+
+      hideError();
+      selectedFile = file;
+
+      fileName.textContent = file.name;
+      fileSize.textContent = formatFileSize(file.size);
+      fileInfo.classList.add('show');
+      uploadBtn.disabled = false;
+    }
+
+    // =============================================
+    // 에러 표시 / 숨기기
+    // =============================================
+    function showError(msg) {
+      errorText.textContent = msg;
+      errorMsg.classList.add('show');
+    }
+
+    function hideError() {
+      errorMsg.classList.remove('show');
+    }
+
+    // =============================================
+    // 진행 상태 업데이트 함수
+    // =============================================
+    function setStep(stepNum, status) {
+      const step = document.getElementById('step' + stepNum);
+      step.className = 'step ' + status;
+
+      step.querySelector('.step-icon').textContent =
+        status === 'active' ? stepNum : (status === 'done' ? '✔' : '✕');
+    }
+
+    function resetSteps() {
+      [1, 2, 3].forEach(n => {
+        const step = document.getElementById('step' + n);
+        step.className = 'step';
+        step.querySelector('.step-icon').textContent = n;
+      });
+    }
+
+    // =============================================
+    // 드래그 앤 드롭 이벤트
+    // =============================================
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+      dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) handleFile(file);
+    });
+
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files[0]) handleFile(fileInput.files[0]);
+    });
+
+    // =============================================
+    // 파일 제거 버튼
+    // =============================================
+    removeBtn.addEventListener('click', () => {
+      selectedFile = null;
+      fileInput.value = '';
+      fileInfo.classList.remove('show');
+      uploadBtn.disabled = true;
+      hideError();
+    });
+
+    // =============================================
+    // 업로드 및 분석 요청 (3단계 흐름)
+    // =============================================
+    uploadBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+
+      hideError();
+      statusCard.classList.add('show');
+      resultCard.classList.remove('show');
+      uploadBtn.disabled = true;
+      resetSteps();
+
+      try {
+        // Step 1: 파일 업로드
+        setStep(1, 'active');
+
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+
+        const uploadRes = await fetch(UPLOAD_URL, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!uploadRes.ok) {
+          throw new Error(`업로드 실패: ${uploadRes.status} ${uploadRes.statusText}`);
+        }
+
+        const uploadJson = await uploadRes.json();
+        const analysisId = uploadJson.analysis_id;
+
+        if (!analysisId) {
+          throw new Error('서버 응답에 analysis_id 가 없습니다.');
+        }
+
+        setStep(1, 'done');
+
+        // Step 2: 분석 시작
+        setStep(2, 'active');
+
+        const analyzeRes = await fetch(ANALYZE_URL(analysisId), {
+          method: 'POST',
+        });
+
+        if (!analyzeRes.ok) {
+          throw new Error(`분석 시작 실패: ${analyzeRes.status} ${analyzeRes.statusText}`);
+        }
+
+        setStep(2, 'done');
+
+        // Step 3: 결과 조회
+        setStep(3, 'active');
+
+        const resultData = await pollResultUntilDone(analysisId);
+
+        setStep(3, 'done');
+
+        // 결과 표시
+        displayFinalResult(analysisId, uploadJson, resultData);
+
+      } catch (err) {
+        setStep(1, 'error');
+        setStep(2, 'error');
+        setStep(3, 'error');
+        showError('서버와 통신 중 오류가 발생했습니다: ' + err.message);
+      } finally {
+        uploadBtn.disabled = false;
+      }
+    });
+
+    // =============================================
+    // /result/{analysis_id} 폴링
+    // =============================================
+    async function pollResultUntilDone(analysisId, intervalMs = 2000, maxAttempts = 30) {
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const res = await fetch(RESULT_URL(analysisId), { method: 'GET' });
+
+        if (!res.ok) {
+          throw new Error(`결과 조회 실패: ${res.status} ${res.statusText}`);
+        }
+
+        const contentType = res.headers.get('Content-Type') || '';
+        if (!contentType.includes('application/json')) {
+          const text = await res.text();
+          throw new Error('JSON 형식이 아닌 응답입니다: ' + text.slice(0, 200));
+        }
+
+        const data = await res.json();
+        const status = (data.status || '').toLowerCase();
+        const hasResult = !!data.result;
+        const hasError  = !!data.error;
+
+        if (hasError) {
+          throw new Error(`서버에서 오류를 반환했습니다: ${data.error}`);
+        }
+
+        // result 필드가 있으면 완료로 간주
+        if (hasResult) {
+          return data;
+        }
+
+        // 상태값이 명시적으로 완료 상태인 경우 (실제 구현에 따라 조정 가능)
+        if (['completed', 'done', 'finished', 'success'].includes(status)) {
+          return data;
+        }
+
+        // 아직 처리 중이면 대기 후 재시도
+        await new Promise(resolve => setTimeout(resolve, intervalMs));
+      }
+
+      throw new Error('결과가 제한 시간 내에 준비되지 않았습니다.');
+    }
+
+    // =============================================
+    // 최종 결과 표시
+    // =============================================
+    function displayFinalResult(analysisId, uploadJson, resultData) {
+      resultCard.classList.add('show');
+
+      const resultObj = resultData || {};
+      const analysisResult = resultObj.result || null;
+
+      let mainText = '';
+      let typeLabel = 'JSON';
+
+      if (!analysisResult) {
+        mainText = JSON.stringify(resultObj, null, 2);
+      } else {
+        const lines = [];
+
+        const summary = analysisResult.summary || {};
+        const riskLevel = analysisResult.risk_level || summary.risk_level || 'N/A';
+
+        lines.push(`=== 분석 요약 ===`);
+        lines.push(`위험도        : ${riskLevel}`);
+        lines.push(`파싱된 이벤트 : ${summary.parsed_events ?? 'N/A'}`);
+        lines.push(`Sysmon 이벤트 : ${summary.sysmon_events ?? 'N/A'}`);
+        lines.push(`핵심 이벤트   : ${summary.sysmon_core_events ?? 'N/A'}`);
+        lines.push(`공격 체인 수  : ${summary.attack_chains ?? 'N/A'}`);
+        lines.push(`의심 체인 수  : ${summary.suspicious_chains ?? 'N/A'}`);
+        lines.push('');
+
+        const keyFindings = analysisResult.key_findings || [];
+        if (keyFindings.length > 0) {
+          lines.push(`=== 주요 발견 사항 (Key Findings) ===`);
+          keyFindings.forEach((kf, idx) => {
+            lines.push(`- (${idx + 1}) ${kf}`);
+          });
+          lines.push('');
+        }
+
+        const iocs = analysisResult.iocs || {};
+        const iocKeys = Object.keys(iocs);
+        if (iocKeys.length > 0) {
+          lines.push(`=== IOC 요약 ===`);
+          iocKeys.forEach(key => {
+            const values = iocs[key] || [];
+            lines.push(`- ${key}: ${values.join(', ')}`);
+          });
+          lines.push('');
+        }
+
+        const attackChains = analysisResult.attack_chains || [];
+        if (attackChains.length > 0) {
+          lines.push(`=== 공격 체인 (Attack Chains) ===`);
+          attackChains.slice(0, 5).forEach((chain, idx) => {
+            const img = chain.image || 'N/A';
+            const cmd = chain.command_line || '';
+            const user = chain.user || 'N/A';
+            const start = chain.start_time || 'N/A';
+            const evCount = chain.event_count ?? 'N/A';
+
+            lines.push(`[#${idx + 1}] ${img}`);
+            lines.push(`  사용자   : ${user}`);
+            lines.push(`  시작시각 : ${start}`);
+            lines.push(`  이벤트수 : ${evCount}`);
+            if (cmd) {
+              lines.push(`  커맨드   : ${cmd}`);
+            }
+            lines.push('');
+          });
+          lines.push('(※ 5개까지만 표시했습니다. 전체 내용은 JSON 구조를 통해 확인 가능합니다.)');
+          lines.push('');
+        }
+
+        const ruleResults = analysisResult.rule_results || [];
+        if (ruleResults.length > 0) {
+          lines.push(`=== Rule 기반 탐지 결과 (일부) ===`);
+          ruleResults.slice(0, 5).forEach((r, idx) => {
+            const img = r.image || 'N/A';
+            const score = r.score ?? 'N/A';
+            const label = r.label || 'N/A';
+            lines.push(`[#${idx + 1}] ${img}`);
+            lines.push(`  점수   : ${score}`);
+            lines.push(`  라벨   : ${label}`);
+            if (r.reasons && r.reasons.length > 0) {
+              lines.push(`  사유   : ${r.reasons.slice(0, 3).join('; ')}`);
+            }
+            lines.push('');
+          });
+          lines.push('');
+        }
+
+        mainText = lines.join('\n');
+      }
+
+      resultText.textContent = mainText;
+      resultTypeBadge.textContent = typeLabel;
+
+      const infoLines = [];
+      const base = uploadJson || resultObj;
+
+      infoLines.push(`업로드 파일명  : ${base.filename || (selectedFile ? selectedFile.name : '-')}`);
+      infoLines.push(`서버 저장 경로  : ${base.saved_path || '-'}`);
+      infoLines.push(`SHA-256 해시   : ${base.sha256 || '-'}`);
+      infoLines.push(`업로드 상태    : ${base.status || '-'}`);
+      infoLines.push(`analysis_id    : ${analysisId}`);
+      infoLines.push(
+        `결과 위험도    : ${
+          (analysisResult && (analysisResult.risk_level || (analysisResult.summary || {}).risk_level)) || '-'
+        }`
+      );
+      infoLines.push(`분석 시각      : ${new Date().toLocaleString('ko-KR')}`);
+
+      resultInfo.textContent = infoLines.join('\n');
+    }
+
+    // =============================================
+    // 탭 전환
+    // =============================================
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+      });
+    });
+
+    // =============================================
+    // 복사 버튼
+    // =============================================
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(resultText.textContent).then(() => {
+        copyBtn.textContent = '✔ 복사됨!';
+        setTimeout(() => copyBtn.textContent = '📋 복사', 2000);
+      }).catch(() => {
+        showError('클립보드 복사에 실패했습니다. 브라우저 권한을 확인해주세요.');
+      });
+    });
+
+    // =============================================
+    // 다운로드 버튼
+    // =============================================
+    downloadBtn.addEventListener('click', () => {
+      const blob = new Blob([resultText.textContent], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `result_${selectedFile ? selectedFile.name : 'analysis'}_${Date.now()}.txt`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  </script>
+
+</body>
+</html>
