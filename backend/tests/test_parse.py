@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.services.attack_chain_builder import (
     build_abstracted_attack_chains,
     build_attack_chain_candidates,
@@ -7,7 +9,8 @@ from app.services.normalizer import filter_events
 from app.services.winlogbeat_parser import parse_winlogbeat_file
 
 
-SAMPLE_FILE = "../collector/sample_inputs/winlogbeat_sample.json"
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SAMPLE_FILE = PROJECT_ROOT / "collector" / "sample_inputs" / "winlogbeat_sample.json"
 
 
 def test_parse_winlogbeat_sample_file():

@@ -1,7 +1,8 @@
 from __future__ import annotations
+
 from typing import Any
 
-# MITRE ATT&CK 매핑 규칙 (Task19)
+
 MITRE_RULES = [
     {
         "technique_id": "T1059.001",
@@ -54,9 +55,8 @@ MITRE_RULES = [
 ]
 
 
-# Task20: ATT&CK 매핑 모듈 구현
 def map_to_attack(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """이벤트 액션 리스트를 MITRE ATT&CK 기법에 매핑"""
+    """Map process actions to MITRE ATT&CK techniques."""
     matched_techniques = []
     seen = set()
 
@@ -68,7 +68,7 @@ def map_to_attack(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for rule in MITRE_RULES:
             if rule["technique_id"] in seen:
                 continue
-            if any(kw in combined for kw in rule["keywords"]):
+            if any(keyword in combined for keyword in rule["keywords"]):
                 matched_techniques.append({
                     "technique_id": rule["technique_id"],
                     "technique_name": rule["technique_name"],
@@ -80,7 +80,7 @@ def map_to_attack(actions: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def analyze_chain_attack(chain: dict[str, Any]) -> dict[str, Any]:
-    """체인 전체에 대한 ATT&CK 매핑 결과 반환"""
+    """Return ATT&CK mapping details for one process chain."""
     actions = chain.get("actions", [])
     techniques = map_to_attack(actions)
 

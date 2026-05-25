@@ -69,8 +69,20 @@ def predict_chain_with_model(
         if hasattr(model, "predict_proba"):
             probabilities = model.predict_proba(vector)[0]
             confidence = float(max(probabilities))
-    except Exception:
-        prediction, confidence = _predict_with_booster(vector, model_path)
+    except Exception as exc:
+        try:
+            prediction, confidence = _predict_with_booster(vector, model_path)
+        except Exception as fallback_exc:
+            return {
+                "enabled": False,
+                "label": None,
+                "confidence": None,
+                "reason": (
+                    "model prediction failed: "
+                    f"{fallback_exc}; classifier fallback was triggered by: {exc}"
+                ),
+                "feature_columns": ML_FEATURE_COLUMNS,
+            }
 
     return {
         "enabled": True,
@@ -94,7 +106,7 @@ def _predict_with_booster(vector: list[list[float]], model_path: Path) -> tuple[
             f"model expects {expected_feature_count}, backend provides {actual_feature_count}"
         )
 
-    probabilities = booster.predict(xgb.DMatrix(vector))
+    probabilities = booster.predict(xgb.DMatrix(vector, feature_names=ML_FEATURE_COLUMNS))
     raw_prediction = probabilities[0]
 
     if hasattr(raw_prediction, "__len__"):
