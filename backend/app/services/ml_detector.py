@@ -45,29 +45,32 @@ def predict_chain_with_model(
             "reason": "xgboost is not installed",
         }
 
-    model = XGBClassifier()
-    model.load_model(str(model_path))
-    expected_feature_count = model.get_booster().num_features()
-    actual_feature_count = len(vector[0])
+    try:
+        model = XGBClassifier()
+        model.load_model(str(model_path))
+        expected_feature_count = model.get_booster().num_features()
+        actual_feature_count = len(vector[0])
 
-    if expected_feature_count != actual_feature_count:
-        return {
-            "enabled": False,
-            "label": None,
-            "confidence": None,
-            "reason": (
-                "model feature count does not match backend chain features: "
-                f"model expects {expected_feature_count}, backend provides {actual_feature_count}"
-            ),
-            "feature_columns": ML_FEATURE_COLUMNS,
-        }
+        if expected_feature_count != actual_feature_count:
+            return {
+                "enabled": False,
+                "label": None,
+                "confidence": None,
+                "reason": (
+                    "model feature count does not match backend chain features: "
+                    f"model expects {expected_feature_count}, backend provides {actual_feature_count}"
+                ),
+                "feature_columns": ML_FEATURE_COLUMNS,
+            }
 
-    prediction = int(model.predict(vector)[0])
+        prediction = int(model.predict(vector)[0])
 
-    confidence = None
-    if hasattr(model, "predict_proba"):
-        probabilities = model.predict_proba(vector)[0]
-        confidence = float(max(probabilities))
+        confidence = None
+        if hasattr(model, "predict_proba"):
+            probabilities = model.predict_proba(vector)[0]
+            confidence = float(max(probabilities))
+    except Exception:
+        prediction, confidence = _predict_with_booster(vector, model_path)
 
     return {
         "enabled": True,
@@ -75,6 +78,35 @@ def predict_chain_with_model(
         "confidence": confidence,
         "feature_columns": ML_FEATURE_COLUMNS,
     }
+
+
+def _predict_with_booster(vector: list[list[float]], model_path: Path) -> tuple[int, float | None]:
+    import xgboost as xgb
+
+    booster = xgb.Booster()
+    booster.load_model(str(model_path))
+    expected_feature_count = booster.num_features()
+    actual_feature_count = len(vector[0])
+
+    if expected_feature_count != actual_feature_count:
+        raise ValueError(
+            "model feature count does not match backend chain features: "
+            f"model expects {expected_feature_count}, backend provides {actual_feature_count}"
+        )
+
+    probabilities = booster.predict(xgb.DMatrix(vector))
+    raw_prediction = probabilities[0]
+
+    if hasattr(raw_prediction, "__len__"):
+        values = [float(value) for value in raw_prediction]
+        prediction = int(max(range(len(values)), key=values.__getitem__))
+        confidence = max(values)
+        return prediction, confidence
+
+    probability = float(raw_prediction)
+    prediction = 1 if probability >= 0.5 else 0
+    confidence = max(probability, 1 - probability)
+    return prediction, confidence
 
 
 def predict_chains_with_model(
