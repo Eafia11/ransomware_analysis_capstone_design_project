@@ -1,13 +1,16 @@
 from fastapi import APIRouter, HTTPException
-from app.services.storage import analysis_store
+
+from app.models.schemas import AnalysisRecord
+from app.services.storage import get_analysis
 
 router = APIRouter()
 
-@router.get("/result/{analysis_id}")
+
+@router.get("/result/{analysis_id}", response_model=AnalysisRecord)
 def get_result(analysis_id: str):
-    result = analysis_store.get(analysis_id)
+    result = get_analysis(analysis_id)
 
     if result is None:
-        raise HTTPException(status_code=404, detail="해당 analysis_id를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="Analysis ID was not found.")
 
     return result

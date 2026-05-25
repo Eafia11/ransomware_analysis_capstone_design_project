@@ -1,0 +1,10 @@
+[
+  "event_count",
+  "process_create_count",
+  "file_create_count",
+  "registry_modify_count",
+  "network_connect_count",
+  "uses_suspicious_process",
+  "uses_suspicious_command",
+  "has_multiple_behaviors"
+]

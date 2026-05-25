@@ -1,40 +1,37 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException
 import uuid
-import os
-import hashlib
 
-from app.services.storage import analysis_store
+from fastapi import APIRouter, File, HTTPException, UploadFile
+
+from app.core.config import settings
+from app.core.security import validate_upload_file
+from app.models.schemas import UploadResponse
+from app.services.storage import create_analysis
+from app.utils.file_utils import build_unique_file_path, ensure_directory, save_bytes
+from app.utils.hash_utils import calculate_sha256
 
 router = APIRouter()
 
-UPLOAD_DIR = "samples"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+ensure_directory(settings.upload_dir)
 
-@router.post("/upload")
+
+@router.post("/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     if not file.filename:
-        raise HTTPException(status_code=400, detail="파일 이름이 없습니다.")
-
-    analysis_id = str(uuid.uuid4())
-    saved_name = f"{analysis_id}_{file.filename}"
-    file_path = os.path.join(UPLOAD_DIR, saved_name)
+        raise HTTPException(status_code=400, detail="File name is required.")
 
     content = await file.read()
+    validate_upload_file(file, content)
 
-    if not content:
-        raise HTTPException(status_code=400, detail="빈 파일은 업로드할 수 없습니다.")
+    analysis_id = str(uuid.uuid4())
+    file_path = build_unique_file_path(settings.upload_dir, analysis_id, file.filename)
+    save_bytes(file_path, content)
 
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    sha256 = hashlib.sha256(content).hexdigest()
-
-    analysis_store[analysis_id] = {
+    analysis = create_analysis({
         "analysis_id": analysis_id,
         "filename": file.filename,
-        "saved_path": file_path,
-        "sha256": sha256,
-        "status": "uploaded"
-    }
+        "saved_path": str(file_path),
+        "sha256": calculate_sha256(content),
+        "status": "uploaded",
+    })
 
-    return analysis_store[analysis_id]
+    return analysis
