@@ -28,6 +28,17 @@ class UploadResponse(BaseModel):
     status: AnalysisStatus
 
 
+class IngestResponse(BaseModel):
+    analysis_id: str
+    stream_id: str
+    source_host: str
+    filename: str
+    saved_path: str
+    sha256: str
+    status: AnalysisStatus
+    event_count: int
+
+
 class AnalysisRecord(BaseModel):
     analysis_id: str
     filename: str

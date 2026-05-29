@@ -1,0 +1,44 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: netguardian-backend
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      DATA_DIR: /app/data
+      MODEL_DIR: /app/ml/models
+      XGBOOST_MODEL_PATH: /app/ml/models/xgboost_model.json
+      DATABASE_URL: sqlite:////app/data/app.db
+    volumes:
+      - ./data:/app/data
+      - ./ml/models:/app/ml/models:ro
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: netguardian-frontend
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.15.3
+    container_name: netguardian-logstash
+    depends_on:
+      - backend
+    ports:
+      - "5044:5044"
+    volumes:
+      - ./deploy/logstash/pipeline:/usr/share/logstash/pipeline:ro
+    environment:
+      LS_JAVA_OPTS: "-Xms512m -Xmx512m"
+    restart: unless-stopped

@@ -19,6 +19,7 @@ class Settings(BaseModel):
     log_level: str = "INFO"
     data_dir: Path = DEFAULT_DATA_DIR
     upload_dir: Path = DEFAULT_DATA_DIR / "uploads"
+    ingest_dir: Path = DEFAULT_DATA_DIR / "ingested"
     parsed_dir: Path = DEFAULT_DATA_DIR / "parsed"
     normalized_dir: Path = DEFAULT_DATA_DIR / "normalized"
     analyzed_dir: Path = DEFAULT_DATA_DIR / "analyzed"
@@ -48,6 +49,7 @@ def get_settings() -> Settings:
         log_level=os.getenv("LOG_LEVEL", Settings().log_level),
         data_dir=data_dir,
         upload_dir=_path_from_env("UPLOAD_DIR", data_dir / "uploads"),
+        ingest_dir=_path_from_env("INGEST_DIR", data_dir / "ingested"),
         parsed_dir=_path_from_env("PARSED_DIR", data_dir / "parsed"),
         normalized_dir=_path_from_env("NORMALIZED_DIR", data_dir / "normalized"),
         analyzed_dir=_path_from_env("ANALYZED_DIR", data_dir / "analyzed"),

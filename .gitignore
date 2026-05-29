@@ -216,6 +216,8 @@ samples/expected_outputs/*
 data/app.db*
 data/uploads/*
 !data/uploads/.gitkeep
+data/ingested/*
+!data/ingested/.gitkeep
 data/parsed/*
 !data/parsed/.gitkeep
 data/normalized/*
@@ -224,3 +226,6 @@ data/analyzed/*
 !data/analyzed/.gitkeep
 data/reports/*
 !data/reports/.gitkeep
+
+frontend/node_modules/
+frontend/dist/

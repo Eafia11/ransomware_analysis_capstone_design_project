@@ -16,12 +16,29 @@ DOMAIN_PATTERN = re.compile(
     re.IGNORECASE,
 )
 HASH_PATTERN = re.compile(r"\b(?:[a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64})\b")
+EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+BITCOIN_PATTERN = re.compile(r"\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b")
 WINDOWS_PATH_PATTERN = re.compile(
     r"\b[A-Za-z]:\\(?:[^\s\\/:*?\"<>|\r\n]+\\)*[^\s\\/:*?\"<>|\r\n]*"
 )
 REGISTRY_PATTERN = re.compile(
     r"\b(?:HKLM|HKCU|HKCR|HKU|HKCC|HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER|"
     r"HKEY_CLASSES_ROOT|HKEY_USERS|HKEY_CURRENT_CONFIG)\\[^\s\"']+",
+    re.IGNORECASE,
+)
+RANSOM_NOTE_PATTERN = re.compile(
+    r"\b(?:README_RESTORE|HOW_TO_DECRYPT|RECOVER_FILES|DECRYPT_INSTRUCTION|"
+    r"YOUR_FILES_ARE_ENCRYPTED|RESTORE_FILES|READ_ME|README_FOR_DECRYPT)"
+    r"(?:\.[A-Za-z0-9]+)?\b",
+    re.IGNORECASE,
+)
+ENCRYPTED_EXTENSION_PATTERN = re.compile(
+    r"\.[A-Za-z0-9_-]*?(locked|encrypted|crypted|crypt|enc|ransom|pay|aes)\b",
+    re.IGNORECASE,
+)
+SUSPICIOUS_FILE_NAME_PATTERN = re.compile(
+    r"\b(?:ransom|decrypt|encryptor|locker|dropper|payload|mimikatz|"
+    r"procdump|shadowcopy|vssadmin|bitsadmin|certutil)\.[A-Za-z0-9]{1,8}\b",
     re.IGNORECASE,
 )
 
@@ -89,6 +106,11 @@ def _empty_ioc_sets() -> dict[str, set[str]]:
         "hashes": set(),
         "file_paths": set(),
         "registry_keys": set(),
+        "ransom_notes": set(),
+        "encrypted_extensions": set(),
+        "suspicious_file_names": set(),
+        "bitcoin_addresses": set(),
+        "email_addresses": set(),
     }
 
 
@@ -127,11 +149,35 @@ def _extract_from_texts(texts: list[str], accumulator: dict[str, set[str]]) -> N
     for hash_value in HASH_PATTERN.findall(combined):
         accumulator["hashes"].add(hash_value.lower())
 
+    for email in EMAIL_PATTERN.findall(combined):
+        accumulator["email_addresses"].add(email.lower())
+
+    for bitcoin_address in BITCOIN_PATTERN.findall(combined):
+        accumulator["bitcoin_addresses"].add(bitcoin_address)
+
     for file_path in WINDOWS_PATH_PATTERN.findall(combined):
-        accumulator["file_paths"].add(_clean_token(file_path))
+        cleaned_path = _clean_token(file_path)
+        accumulator["file_paths"].add(cleaned_path)
+        _extract_ransomware_file_artifacts(cleaned_path, accumulator)
 
     for registry_key in REGISTRY_PATTERN.findall(combined):
         accumulator["registry_keys"].add(_clean_token(registry_key))
+
+    _extract_ransomware_file_artifacts(combined, accumulator)
+
+
+def _extract_ransomware_file_artifacts(
+    text: str,
+    accumulator: dict[str, set[str]],
+) -> None:
+    for note in RANSOM_NOTE_PATTERN.findall(text):
+        accumulator["ransom_notes"].add(_clean_token(note))
+
+    for extension in ENCRYPTED_EXTENSION_PATTERN.findall(text):
+        accumulator["encrypted_extensions"].add(f".{extension.lower()}")
+
+    for filename in SUSPICIOUS_FILE_NAME_PATTERN.findall(text):
+        accumulator["suspicious_file_names"].add(_clean_token(filename).lower())
 
 
 def _finalize_iocs(accumulator: dict[str, set[str]]) -> dict[str, list[str]]:

@@ -14,6 +14,15 @@ router = APIRouter()
 
 @router.post("/analyze/{analysis_id}", response_model=AnalyzeResponse)
 def analyze_file(analysis_id: str):
+    return _analyze_existing_record(analysis_id)
+
+
+@router.post("/analyze/stream/{analysis_id}", response_model=AnalyzeResponse)
+def analyze_stream(analysis_id: str):
+    return _analyze_existing_record(analysis_id)
+
+
+def _analyze_existing_record(analysis_id: str):
     item = get_analysis(analysis_id)
 
     if item is None:

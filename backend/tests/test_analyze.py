@@ -76,3 +76,48 @@ def test_analyze_runs_report_service_and_stores_result(monkeypatch):
     assert body["status"] == "completed"
     assert body["result"]["summary"]["parsed_events"] == 1
     assert stored["status"] == "analyzing"
+
+
+def test_analyze_marks_record_failed_when_report_service_raises(monkeypatch):
+    updates = []
+
+    monkeypatch.setattr(
+        analyze_api,
+        "get_analysis",
+        lambda analysis_id: {
+            "analysis_id": analysis_id,
+            "filename": "broken.json",
+            "saved_path": "../data/uploads/broken.json",
+            "sha256": "1" * 64,
+            "status": "uploaded",
+        },
+    )
+    monkeypatch.setattr(
+        analyze_api,
+        "set_analysis_status",
+        lambda analysis_id, status: updates.append(
+            {"analysis_id": analysis_id, "status": status}
+        ),
+    )
+
+    def raise_analysis_error(saved_path, analysis_id=None):
+        raise RuntimeError("parser failed")
+
+    monkeypatch.setattr(analyze_api, "analyze_winlogbeat_file", raise_analysis_error)
+    monkeypatch.setattr(
+        analyze_api,
+        "update_analysis",
+        lambda analysis_id, **kwargs: updates.append(
+            {"analysis_id": analysis_id, **kwargs}
+        ),
+    )
+
+    client = TestClient(app)
+    response = client.post("/analyze/analysis-failed")
+
+    assert response.status_code == 500
+    assert "Analysis failed: parser failed" in response.json()["detail"]
+    assert updates == [
+        {"analysis_id": "analysis-failed", "status": "analyzing"},
+        {"analysis_id": "analysis-failed", "status": "failed", "error": "parser failed"},
+    ]

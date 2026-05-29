@@ -40,6 +40,8 @@ class MitreTechnique(BaseModel):
     technique_id: str
     technique: str
     tactic: str
+    evidence: list[str] = Field(default_factory=list)
+    confidence: str | None = None
 
 
 class MlDetectionResult(BaseModel):
@@ -59,6 +61,7 @@ class RuleDetectionResult(BaseModel):
     start_time: str | None = None
     event_count: int | None = None
     features: ChainFeatures | dict[str, Any] = Field(default_factory=dict)
+    indicators: dict[str, Any] = Field(default_factory=dict)
     score: int = 0
     label: str
     reasons: list[str] = Field(default_factory=list)

@@ -146,13 +146,34 @@ def calculate_risk_level(
     iocs: dict[str, list[str]],
 ) -> str:
     highest_score = max((result.get("score", 0) for result in suspicious_results), default=0)
-    ioc_count = sum(len(values) for values in iocs.values())
+    ransomware_ioc_count = _count_ransomware_iocs(iocs)
 
-    if highest_score >= 8 or len(suspicious_results) >= 3 or ioc_count >= 10:
+    if highest_score >= 12:
         return "high"
-    if highest_score >= 5 or suspicious_results or ioc_count >= 3:
+
+    if highest_score >= 8 and ransomware_ioc_count > 0:
+        return "high"
+
+    if len(suspicious_results) >= 3 and highest_score >= 5:
+        return "high"
+
+    if highest_score >= 5 or suspicious_results:
         return "medium"
+
+    if ransomware_ioc_count >= 2:
+        return "medium"
+
     return "low"
+
+
+def _count_ransomware_iocs(iocs: dict[str, list[str]]) -> int:
+    ransomware_ioc_keys = {
+        "ransom_notes",
+        "encrypted_extensions",
+        "suspicious_file_names",
+        "bitcoin_addresses",
+    }
+    return sum(len(iocs.get(key, [])) for key in ransomware_ioc_keys)
 
 
 def build_key_findings(
@@ -160,21 +181,27 @@ def build_key_findings(
     iocs: dict[str, list[str]],
     risk_level: str,
 ) -> list[str]:
-    findings = [f"Overall risk level is {risk_level}."]
+    risk_labels = {
+        "low": "\ub0ae\uc74c",
+        "medium": "\uc911\uac04",
+        "high": "\ub192\uc74c",
+    }
+    findings = [f"\uc804\uccb4 \uc704\ud5d8\ub3c4\ub294 {risk_labels.get(risk_level, risk_level)}\uc785\ub2c8\ub2e4."]
 
     if suspicious_results:
         top_result = suspicious_results[0]
+        process_name = top_result.get("image") or "\uc54c \uc218 \uc5c6\ub294 \ud504\ub85c\uc138\uc2a4"
         findings.append(
-            "Highest scoring suspicious chain: "
-            f"{top_result.get('image') or 'unknown process'} "
-            f"(score {top_result.get('score', 0)})."
+            "\uac00\uc7a5 \ub192\uc740 \uc810\uc218\uc758 \uc758\uc2ec \uccb4\uc778: "
+            f"{process_name} "
+            f"(\uc810\uc218 {top_result.get('score', 0)})."
         )
     else:
-        findings.append("No suspicious attack chains exceeded the rule threshold.")
+        findings.append("\ub8f0 \uc784\uacc4\uac12\uc744 \ub118\uc740 \uc758\uc2ec \uacf5\uaca9 \uccb4\uc778\uc740 \uc5c6\uc2b5\ub2c8\ub2e4.")
 
     ioc_counts = summarize_iocs(iocs)
     total_iocs = sum(ioc_counts.values())
-    findings.append(f"Extracted {total_iocs} IOC values across {len(ioc_counts)} categories.")
+    findings.append(f"{len(ioc_counts)}\uac1c \uce74\ud14c\uace0\ub9ac\uc5d0\uc11c IOC \uac12 {total_iocs}\uac1c\ub97c \ucd94\ucd9c\ud588\uc2b5\ub2c8\ub2e4.")
 
     return findings
 
@@ -208,22 +235,57 @@ def build_llm_report(
         ],
         "attack_chain_summaries": abstracted_attack_chains[:10],
         "reporting_instruction": (
-            "Write a concise ransomware analysis report using the summary, IOC, "
-            "MITRE ATT&CK, suspicious process, and attack chain evidence."
+            "\uc694\uc57d, IOC, MITRE ATT&CK, \uc758\uc2ec \ud504\ub85c\uc138\uc2a4, "
+            "\uacf5\uaca9 \uccb4\uc778 \uadfc\uac70\ub97c \uc0ac\uc6a9\ud574 \ud55c\uad6d\uc5b4 "
+            "\ub79c\uc12c\uc6e8\uc5b4 \ubd84\uc11d \ubcf4\uace0\uc11c\ub97c \uac04\uacb0\ud558\uac8c \uc791\uc131\ud558\uc138\uc694. "
+            "\ud310\ub2e8 \uadfc\uac70\uc640 \uc624\ud0d0 \uac00\ub2a5\uc131\uc744 \ud568\uaed8 \uc124\uba85\ud558\uc138\uc694."
         ),
     }
 
 
-def collect_mitre_techniques(results: list[dict[str, Any]]) -> list[dict[str, str]]:
+def collect_mitre_techniques(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen = set()
     techniques = []
 
     for result in results:
         for technique in result.get("mitre_attack", []):
             key = (technique.get("technique_id"), technique.get("tactic"))
-            if key in seen:
+            if key not in seen:
+                seen.add(key)
+                techniques.append({**technique})
                 continue
-            seen.add(key)
-            techniques.append(technique)
+
+            existing = next(
+                item
+                for item in techniques
+                if (item.get("technique_id"), item.get("tactic")) == key
+            )
+            existing["evidence"] = _merge_unique_limited([
+                *existing.get("evidence", []),
+                *technique.get("evidence", []),
+            ])
+            existing["confidence"] = _higher_mitre_confidence(
+                existing.get("confidence"),
+                technique.get("confidence"),
+            )
 
     return techniques
+
+
+def _merge_unique_limited(values: list[str], limit: int = 5) -> list[str]:
+    merged = []
+    for value in values:
+        if value and value not in merged:
+            merged.append(value)
+        if len(merged) >= limit:
+            break
+    return merged
+
+
+def _higher_mitre_confidence(left: str | None, right: str | None) -> str | None:
+    order = {"low": 0, "medium": 1, "high": 2}
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return left if order[left] >= order[right] else right

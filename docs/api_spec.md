@@ -204,7 +204,12 @@ file: 업로드할 로그 파일
     "urls": 23,
     "hashes": 167,
     "file_paths": 198,
-    "registry_keys": 0
+    "registry_keys": 0,
+    "ransom_notes": 2,
+    "encrypted_extensions": 4,
+    "suspicious_file_names": 3,
+    "bitcoin_addresses": 1,
+    "email_addresses": 1
   },
   "events_by_type": {
     "total": 14178,
@@ -226,7 +231,12 @@ file: 업로드할 로그 파일
   "urls": [],
   "hashes": [],
   "file_paths": [],
-  "registry_keys": []
+  "registry_keys": [],
+  "ransom_notes": [],
+  "encrypted_extensions": [],
+  "suspicious_file_names": [],
+  "bitcoin_addresses": [],
+  "email_addresses": []
 }
 ```
 
@@ -257,7 +267,15 @@ file: 업로드할 로그 파일
   "label": "suspicious",
   "reasons": [],
   "actions": [],
-  "mitre_attack": [],
+  "mitre_attack": [
+    {
+      "technique_id": "T1490",
+      "technique": "Inhibit System Recovery",
+      "tactic": "Impact",
+      "evidence": ["vssadmin delete shadows /all /quiet"],
+      "confidence": "low"
+    }
+  ],
   "ml_result": {
     "enabled": true,
     "label": "suspicious",
@@ -364,4 +382,75 @@ python collector/scripts/send_sample_log.py --analyze
 ```bash
 cd backend
 python -m pytest -q
+```
+
+## 8. 실시간 ingest API
+
+### 8.1 `POST /ingest/winlogbeat`
+
+Logstash HTTP output이 Winlogbeat 이벤트를 전달하는 엔드포인트다. 요청 본문은 Winlogbeat 이벤트 JSON 1건이다.
+
+요청 예시:
+
+```json
+{
+  "@timestamp": "2026-05-25T10:00:00Z",
+  "agent": {
+    "name": "analysis-vm-01",
+    "type": "winlogbeat"
+  },
+  "winlog": {
+    "channel": "Microsoft-Windows-Sysmon/Operational",
+    "event_id": 1,
+    "event_data": {
+      "Image": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+      "CommandLine": "powershell.exe -NoProfile"
+    }
+  }
+}
+```
+
+응답 예시:
+
+```json
+{
+  "analysis_id": "stream-analysis-vm-01",
+  "stream_id": "analysis-vm-01",
+  "status": "uploaded",
+  "event_count": 1,
+  "saved_path": "data/ingested/analysis-vm-01.jsonl"
+}
+```
+
+빈 JSON 객체는 `400`으로 거절한다.
+
+### 8.2 `POST /analyze/stream/{analysis_id}`
+
+ingest API로 누적된 JSONL 파일을 분석한다. 기존 업로드 분석 API와 같은 응답 구조를 사용한다.
+
+```text
+POST /analyze/stream/stream-analysis-vm-01
+```
+
+분석 중 예외가 발생하면 분석 레코드 상태는 `failed`로 저장되고 API는 `500`을 반환한다.
+
+## 9. 테스트와 검증
+
+백엔드 테스트:
+
+```bash
+python -m pytest backend/tests
+```
+
+프론트엔드 빌드:
+
+```bash
+cd frontend
+npm run build
+```
+
+PowerShell 통합 검증:
+
+```powershell
+.\scripts\verify.ps1
 ```

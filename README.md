@@ -144,7 +144,12 @@ data/reports/{analysis_id}_llm_input.json
     "urls": [],
     "hashes": [],
     "file_paths": [],
-    "registry_keys": []
+    "registry_keys": [],
+    "ransom_notes": [],
+    "encrypted_extensions": [],
+    "suspicious_file_names": [],
+    "bitcoin_addresses": [],
+    "email_addresses": []
   },
   "mitre_attack": [],
   "suspicious_processes": [],
@@ -296,3 +301,73 @@ E2E 분석 파이프라인
 - MITRE 매핑 룰 보강
 - 프론트엔드 연동
 - LLM 보고서 생성 모듈 구현
+
+## 운영 배포 빠른 실행
+
+운영 배포는 Docker Compose 기준으로 구성합니다. FastAPI는 내부 컨테이너 포트 `8000`으로만 열고, 외부 사용자는 Nginx가 제공하는 `80`번 포트로 접근합니다. Winlogbeat는 Logstash의 `5044`번 포트로 이벤트를 전송합니다.
+
+```bash
+cp .env.example .env
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml ps
+curl http://localhost/health
+```
+
+EC2 재부팅 후에도 자동으로 올라오게 하려면 systemd 서비스를 등록합니다.
+
+```bash
+sudo cp deploy/systemd/netguardian.service /etc/systemd/system/netguardian.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now netguardian
+sudo systemctl status netguardian
+```
+
+AWS 보안 그룹은 최소한으로 엽니다.
+
+```text
+22/tcp   관리자 SSH 접속 IP만 허용
+80/tcp   웹 대시보드 접근 IP 허용
+5044/tcp 분석 VM 또는 실습망 IP만 허용
+8000/tcp 외부 개방 금지, Nginx 내부 프록시만 사용
+```
+
+분석 VM의 Winlogbeat는 Logstash로 전송합니다.
+
+```yaml
+output.logstash:
+  hosts: ["<EC2_PUBLIC_IP>:5044"]
+```
+
+상세 배포 절차와 장애 확인 명령은 `docs/deployment.md`를 참고합니다.
+
+## 테스트와 문서
+
+통합 검증:
+
+```powershell
+.\scripts\verify.ps1
+```
+
+백엔드만 검증:
+
+```bash
+python -m pytest backend/tests
+```
+
+프론트엔드 빌드 검증:
+
+```bash
+cd frontend
+npm run build
+```
+
+운영과 시연 문서:
+
+```text
+docs/architecture.md
+docs/api_spec.md
+docs/aws_logstash_setup.md
+docs/winlogbeat_setup.md
+docs/demo_scenario.md
+docs/deployment.md
+```

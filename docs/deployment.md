@@ -1,139 +1,222 @@
-# 배포 및 실행 문서
+# 배포 및 운영 실행 문서
 
-## 1. 목적
+이 문서는 AWS EC2 한 대에서 프론트엔드, FastAPI 백엔드, Logstash를 함께 운영하는 구성을 기준으로 한다.
 
-이 문서는 프로젝트를 로컬 개발 환경 또는 Docker 환경에서 실행하기 위한 절차를 정리한다. 현재 프로젝트는 캡스톤 개발/시연 환경을 기준으로 구성되어 있으며, 운영 배포 전에는 인증, 파일 보관 정책, 작업 큐 도입 등을 추가 검토해야 한다.
-
-## 2. 로컬 실행 환경
-
-권장 환경:
+## 1. 운영 구조
 
 ```text
-Python 3.10
-Windows PowerShell 또는 Git Bash
+분석 VM
+  Sysmon + Winlogbeat
+        |
+        | TCP 5044
+        v
+AWS EC2
+  Logstash -> FastAPI backend -> SQLite/data artifacts
+  Nginx    -> React static frontend + backend reverse proxy
 ```
 
-의존성 설치:
-
-```bash
-cd backend
-pip install -r requirements.txt
-cd ..
-```
-
-DB 초기화:
-
-```bash
-scripts/init_db.bat
-```
-
-백엔드 실행:
-
-```bash
-scripts/run_backend.bat
-```
-
-접속:
+컨테이너 구성:
 
 ```text
-http://127.0.0.1:8000
-http://127.0.0.1:8000/docs
+frontend  : Nginx가 React 빌드 결과를 서빙하고 backend API를 프록시
+backend   : FastAPI 분석 서버
+logstash  : Winlogbeat Beats 입력을 받아 /ingest/winlogbeat로 전달
 ```
 
-## 3. Docker Compose 실행
+## 2. EC2 준비
 
-루트에 `docker-compose.yml`이 있다.
+권장:
 
-실행:
+```text
+Ubuntu 22.04 LTS 이상
+2 vCPU / 4GB RAM 이상
+디스크 20GB 이상
+```
+
+필수 패키지:
 
 ```bash
-docker compose up
+sudo apt update
+sudo apt install -y git docker.io docker-compose-plugin
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER
 ```
 
-Compose 서비스:
+`usermod` 적용 후 SSH 재접속이 필요하다.
 
-```text
-backend
+## 3. 프로젝트 배치
+
+예시 경로:
+
+```bash
+sudo mkdir -p /opt/netguardian
+sudo chown -R $USER:$USER /opt/netguardian
+git clone <REPOSITORY_URL> /opt/netguardian
+cd /opt/netguardian
 ```
 
-컨테이너 설정:
+환경 파일 생성:
 
-```text
+```bash
+cp .env.example .env
+```
+
+운영 기본값은 다음과 같다.
+
+```env
+APP_ENV=production
 DATA_DIR=/app/data
 MODEL_DIR=/app/ml/models
 XGBOOST_MODEL_PATH=/app/ml/models/xgboost_model.json
 DATABASE_URL=sqlite:////app/data/app.db
 ```
 
-Docker 환경에서는 저장소 전체를 `/app`으로 마운트한다. 따라서 컨테이너에서 생성된 분석 결과도 호스트의 `data/` 폴더에 남는다.
+## 4. Docker Compose 배포
 
-## 4. 데이터와 산출물
+빌드 및 실행:
 
-주요 산출물 경로:
-
-```text
-data/uploads/      업로드 로그
-data/parsed/       파싱 결과
-data/normalized/   정규화/필터링 결과
-data/analyzed/     공격 체인 및 탐지 결과
-data/reports/      최종 보고서 JSON, LLM 입력 JSON
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-DB:
+상태 확인:
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f backend
+docker compose -f docker-compose.prod.yml logs -f logstash
+```
+
+헬스 체크:
+
+```bash
+curl http://localhost/health
+```
+
+외부 접속:
+
+```text
+http://<EC2_PUBLIC_IP>/
+```
+
+## 5. systemd 자동 시작
+
+서버 재부팅 후 자동으로 Compose 스택을 올리려면 systemd 유닛을 설치한다.
+
+```bash
+sudo cp deploy/systemd/netguardian.service /etc/systemd/system/netguardian.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now netguardian
+```
+
+운영 명령:
+
+```bash
+sudo systemctl status netguardian
+sudo systemctl restart netguardian
+sudo journalctl -u netguardian -f
+```
+
+## 6. Logstash 자동 수집
+
+Logstash 파이프라인 파일:
+
+```text
+deploy/logstash/pipeline/winlogbeat-to-backend.conf
+```
+
+동작:
+
+```text
+input  : beats { port => 5044 }
+output : http://backend:8000/ingest/winlogbeat
+```
+
+Winlogbeat VM 설정 예시:
+
+```yaml
+winlogbeat.event_logs:
+  - name: Microsoft-Windows-Sysmon/Operational
+  - name: Security
+  - name: System
+  - name: Application
+
+output.logstash:
+  hosts: ["<EC2_PUBLIC_IP>:5044"]
+```
+
+## 7. AWS 보안 그룹
+
+최소 인바운드 규칙:
+
+```text
+22/tcp    내 IP만 허용
+80/tcp    발표/프론트 접속 IP 또는 0.0.0.0/0
+5044/tcp  분석 VM 공인 IP만 허용
+```
+
+권장:
+
+```text
+8000/tcp  외부 공개 금지
+443/tcp   도메인/HTTPS 적용 시 허용
+```
+
+FastAPI는 Nginx 내부 프록시를 통해 접근한다. 따라서 운영 환경에서는 `8000`을 보안 그룹에 열지 않는 구성이 더 안전하다.
+
+## 8. 데이터와 백업
+
+컨테이너가 생성하는 분석 결과는 호스트의 `data/`에 남는다.
 
 ```text
 data/app.db
+data/uploads/
+data/ingested/
+data/parsed/
+data/normalized/
+data/analyzed/
+data/reports/
 ```
 
-Git 추적 제외 대상:
-
-```text
-data/app.db*
-data/uploads/*
-samples/benign/*
-samples/ransomware/*
-samples/expected_outputs/*
-```
-
-## 5. 샘플 분석 시연
-
-1. 백엔드 실행
+백업 예시:
 
 ```bash
-scripts/run_backend.bat
+tar -czf netguardian-data-$(date +%Y%m%d).tar.gz data
 ```
 
-2. 샘플 로그 업로드 및 분석
+## 9. 업데이트 절차
 
 ```bash
-python collector/scripts/send_sample_log.py --analyze
+cd /opt/netguardian
+git pull
+docker compose -f docker-compose.prod.yml up -d --build
+curl http://localhost/health
 ```
 
-3. 결과 확인
+프론트만 바뀌어도 `frontend` 이미지를 다시 빌드해야 한다.
 
-```text
-data/reports/{analysis_id}_analysis_report.json
-data/reports/{analysis_id}_llm_input.json
-```
+## 10. 장애 확인
 
-## 6. 테스트
+백엔드 로그:
 
 ```bash
-cd backend
-python -m pytest tests
-cd ..
+docker compose -f docker-compose.prod.yml logs -f backend
 ```
 
-현재 테스트는 API, 파서, 룰 탐지, IOC 추출, ML helper를 포함한다.
+Logstash 수신 확인:
 
-## 7. 운영 전 보완 사항
+```bash
+docker compose -f docker-compose.prod.yml logs -f logstash
+```
 
-운영 환경으로 확장하려면 다음 항목을 검토해야 한다.
+Nginx/프론트 확인:
 
-- API 인증 및 권한 관리
-- 업로드 파일 용량 제한 정책 강화
-- 업로드 파일 보관 기간 및 삭제 정책
-- 비동기 분석 작업 큐 도입
-- SQLite에서 PostgreSQL 등 서버형 DB로 전환
-- Docker image 고정 빌드 방식 도입
-- 로그와 분석 산출물 백업 정책 수립
+```bash
+docker compose -f docker-compose.prod.yml logs -f frontend
+```
+
+컨테이너 재시작:
+
+```bash
+docker compose -f docker-compose.prod.yml restart
+```

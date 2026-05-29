@@ -43,7 +43,19 @@ SUMMARY_KEYS = {
     "ioc_counts",
     "events_by_type",
 }
-IOC_KEYS = {"ips", "domains", "urls", "hashes", "file_paths", "registry_keys"}
+IOC_KEYS = {
+    "ips",
+    "domains",
+    "urls",
+    "hashes",
+    "file_paths",
+    "registry_keys",
+    "ransom_notes",
+    "encrypted_extensions",
+    "suspicious_file_names",
+    "bitcoin_addresses",
+    "email_addresses",
+}
 RULE_RESULT_KEYS = {
     "process_guid",
     "image",
@@ -53,6 +65,7 @@ RULE_RESULT_KEYS = {
     "start_time",
     "event_count",
     "features",
+    "indicators",
     "score",
     "label",
     "reasons",

@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api.health import router as health_router
+from app.api.ingest import router as ingest_router
 from app.api.upload import router as upload_router
 from app.api.result import router as result_router
 from app.api.analyze import router as analyze_router
@@ -18,6 +19,7 @@ configure_logging()
 async def lifespan(app: FastAPI):
     ensure_data_directories(
         settings.upload_dir,
+        settings.ingest_dir,
         settings.parsed_dir,
         settings.normalized_dir,
         settings.analyzed_dir,
@@ -34,6 +36,7 @@ app = FastAPI(
 )
 
 app.include_router(health_router)
+app.include_router(ingest_router)
 app.include_router(upload_router)
 app.include_router(result_router)
 app.include_router(analyze_router)
