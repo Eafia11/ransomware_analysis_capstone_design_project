@@ -16,9 +16,18 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { analyzeFile, checkHealth, getAnalysisResult, uploadLogFile } from "./api.js";
+import {
+  analyzeFile,
+  checkHealth,
+  getAnalysisResult,
+  getSandboxStatus,
+  runSandboxExecutable,
+  uploadLogFile,
+} from "./api.js";
 
 const ACCEPTED_EXTENSIONS = [".json", ".jsonl", ".log", ".txt"];
+const EXE_EXTENSION = ".exe";
+const SANDBOX_TERMINAL_STATUSES = new Set(["terminated", "failed"]);
 
 const STEP_LABELS = [
   { key: "upload", label: "파일 업로드" },
@@ -100,6 +109,27 @@ function confidenceLabel(confidence) {
   if (confidence === "medium") return "중간";
   if (confidence === "low") return "낮음";
   return "미확인";
+}
+
+function sandboxStatusLabel(status) {
+  const labels = {
+    queued: "대기 중",
+    launching: "Windows EC2 생성 중",
+    waiting_for_ssh: "SSH 연결 대기 중",
+    transferring: "EXE 전송 중",
+    running: "샘플 실행 중",
+    terminating: "인스턴스 종료 중",
+    terminated: "실행 완료",
+    failed: "실패",
+  };
+  return labels[status] || "상태 없음";
+}
+
+function sandboxStatusClass(status) {
+  if (status === "failed") return "failed";
+  if (status === "terminated") return "done";
+  if (status) return "active";
+  return "";
 }
 
 function pickResult(recordOrResponse) {
@@ -341,7 +371,15 @@ function downloadText(filename, content, type = "text/plain") {
 
 function App() {
   const fileInputRef = useRef(null);
+  const exeInputRef = useRef(null);
   const [health, setHealth] = useState(null);
+  const [selectedExeFile, setSelectedExeFile] = useState(null);
+  const [isExeDragging, setIsExeDragging] = useState(false);
+  const [sandboxRuntimeSeconds, setSandboxRuntimeSeconds] = useState(300);
+  const [sandboxSession, setSandboxSession] = useState(null);
+  const [sandboxError, setSandboxError] = useState("");
+  const [isSubmittingSandbox, setIsSubmittingSandbox] = useState(false);
+  const [isRefreshingSandbox, setIsRefreshingSandbox] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
   const [activeStep, setActiveStep] = useState(null);
@@ -375,6 +413,70 @@ function App() {
       .then(setHealth)
       .catch(() => setHealth({ status: "offline", service: "백엔드 연결 불가" }));
   }, []);
+
+  useEffect(() => {
+    if (!sandboxSession?.session_id || SANDBOX_TERMINAL_STATUSES.has(sandboxSession.status)) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      refreshSandboxStatus(sandboxSession.session_id);
+    }, 5000);
+
+    return () => window.clearTimeout(timer);
+  }, [sandboxSession?.session_id, sandboxSession?.status]);
+
+  function handleExeFile(file) {
+    const isAccepted = file.name.toLowerCase().endsWith(EXE_EXTENSION);
+
+    if (!isAccepted) {
+      setSandboxError("EXE 파일만 업로드할 수 있습니다.");
+      return;
+    }
+
+    setSandboxError("");
+    setSelectedExeFile(file);
+    setSandboxSession(null);
+  }
+
+  function removeSelectedExeFile() {
+    setSelectedExeFile(null);
+    setSandboxSession(null);
+    setSandboxError("");
+    if (exeInputRef.current) exeInputRef.current.value = "";
+  }
+
+  async function refreshSandboxStatus(sessionId = sandboxSession?.session_id) {
+    if (!sessionId) return;
+
+    setIsRefreshingSandbox(true);
+    try {
+      const nextSession = await getSandboxStatus(sessionId);
+      setSandboxSession(nextSession);
+      setSandboxError("");
+    } catch (statusError) {
+      setSandboxError(statusError.message || "샌드박스 상태 조회 중 오류가 발생했습니다.");
+    } finally {
+      setIsRefreshingSandbox(false);
+    }
+  }
+
+  async function runSandbox() {
+    if (!selectedExeFile) return;
+
+    setSandboxError("");
+    setIsSubmittingSandbox(true);
+    setSandboxSession(null);
+
+    try {
+      const session = await runSandboxExecutable(selectedExeFile, sandboxRuntimeSeconds);
+      setSandboxSession(session);
+    } catch (runError) {
+      setSandboxError(runError.message || "샌드박스 실행 요청 중 오류가 발생했습니다.");
+    } finally {
+      setIsSubmittingSandbox(false);
+    }
+  }
 
   function resetResult() {
     setAnalysisRecord(null);
@@ -446,6 +548,7 @@ function App() {
         </div>
 
         <nav className="nav-list" aria-label="주요 메뉴">
+          <a href="#sandbox">EXE 실행</a>
           <a href="#upload">로그 업로드</a>
           <a href="#analysis">분석 결과</a>
           <a href="#llm">LLM 전달 JSON</a>
@@ -477,6 +580,153 @@ function App() {
               <Download size={16} aria-hidden="true" />
               결과 JSON
             </button>
+          </div>
+        </section>
+
+        <section className="sandbox-section" id="sandbox">
+          <div className="panel sandbox-panel">
+            <div className="panel-title split-title">
+              <div>
+                <h2>EXE 샌드박스 실행</h2>
+                <span>실행 파일을 Windows EC2에 전송하고 일정 시간 실행한 뒤 Sysmon 로그를 수집합니다.</span>
+              </div>
+              <div className="runtime-control">
+                <label htmlFor="sandbox-runtime">실행 시간</label>
+                <input
+                  id="sandbox-runtime"
+                  type="number"
+                  min="30"
+                  step="30"
+                  value={sandboxRuntimeSeconds}
+                  onChange={(event) => setSandboxRuntimeSeconds(Number(event.target.value) || 300)}
+                />
+                <span>초</span>
+              </div>
+            </div>
+
+            <div className="sandbox-grid">
+              <div>
+                <button
+                  className={`drop-zone exe-drop-zone ${isExeDragging ? "dragging" : ""}`}
+                  type="button"
+                  onClick={() => exeInputRef.current?.click()}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setIsExeDragging(true);
+                  }}
+                  onDragLeave={() => setIsExeDragging(false)}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    setIsExeDragging(false);
+                    const file = event.dataTransfer.files?.[0];
+                    if (file) handleExeFile(file);
+                  }}
+                >
+                  <ShieldAlert size={42} aria-hidden="true" />
+                  <strong>분석할 EXE 파일을 올려주세요</strong>
+                  <span>업로드 후 Windows 샌드박스 인스턴스에서 실행됩니다</span>
+                </button>
+
+                <input
+                  ref={exeInputRef}
+                  className="hidden-input"
+                  type="file"
+                  accept={EXE_EXTENSION}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (file) handleExeFile(file);
+                  }}
+                />
+
+                {selectedExeFile && (
+                  <div className="selected-file">
+                    <FileSearch size={22} aria-hidden="true" />
+                    <div>
+                      <strong>{selectedExeFile.name}</strong>
+                      <span>{formatBytes(selectedExeFile.size)}</span>
+                    </div>
+                    <button className="icon-button" type="button" onClick={removeSelectedExeFile} title="파일 제거">
+                      <X size={17} aria-hidden="true" />
+                    </button>
+                  </div>
+                )}
+
+                {sandboxError && (
+                  <div className="error-banner">
+                    <AlertTriangle size={17} aria-hidden="true" />
+                    <div>
+                      <strong>샌드박스 요청 실패</strong>
+                      <span>{sandboxError}</span>
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  className="primary-button"
+                  type="button"
+                  disabled={!selectedExeFile || isSubmittingSandbox}
+                  onClick={runSandbox}
+                >
+                  {isSubmittingSandbox ? (
+                    <Loader2 className="spin" size={18} aria-hidden="true" />
+                  ) : (
+                    <Upload size={18} aria-hidden="true" />
+                  )}
+                  샌드박스 실행
+                </button>
+              </div>
+
+              <div className={`sandbox-status-card ${sandboxStatusClass(sandboxSession?.status)}`}>
+                <div className="sandbox-status-header">
+                  <div>
+                    <span>현재 상태</span>
+                    <strong>{sandboxStatusLabel(sandboxSession?.status)}</strong>
+                  </div>
+                  <button
+                    className="ghost-button"
+                    type="button"
+                    disabled={!sandboxSession?.session_id || isRefreshingSandbox}
+                    onClick={() => refreshSandboxStatus()}
+                  >
+                    {isRefreshingSandbox ? (
+                      <Loader2 className="spin" size={16} aria-hidden="true" />
+                    ) : (
+                      <RefreshCw size={16} aria-hidden="true" />
+                    )}
+                    새로고침
+                  </button>
+                </div>
+
+                {sandboxSession ? (
+                  <dl className="meta-list">
+                    <div>
+                      <dt>세션 ID</dt>
+                      <dd>{sandboxSession.session_id}</dd>
+                    </div>
+                    <div>
+                      <dt>인스턴스 ID</dt>
+                      <dd>{sandboxSession.instance_id || "-"}</dd>
+                    </div>
+                    <div>
+                      <dt>원격 실행 경로</dt>
+                      <dd>{sandboxSession.remote_path || "-"}</dd>
+                    </div>
+                    <div>
+                      <dt>SHA-256</dt>
+                      <dd>{sandboxSession.sha256}</dd>
+                    </div>
+                    {sandboxSession.error && (
+                      <div>
+                        <dt>오류</dt>
+                        <dd>{sandboxSession.error}</dd>
+                      </div>
+                    )}
+                  </dl>
+                ) : (
+                  <p className="sandbox-empty">아직 실행된 샌드박스 세션이 없습니다.</p>
+                )}
+              </div>
+            </div>
           </div>
         </section>
 

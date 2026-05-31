@@ -35,6 +35,26 @@ export async function uploadLogFile(file) {
   return parseJsonResponse(response);
 }
 
+export async function runSandboxExecutable(file, runtimeSeconds = null) {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (runtimeSeconds) {
+    formData.append("runtime_seconds", String(runtimeSeconds));
+  }
+
+  const response = await fetch(endpoint("/sandbox/run"), {
+    method: "POST",
+    body: formData,
+  });
+
+  return parseJsonResponse(response);
+}
+
+export async function getSandboxStatus(sessionId) {
+  const response = await fetch(endpoint(`/sandbox/status/${sessionId}`));
+  return parseJsonResponse(response);
+}
+
 export async function analyzeFile(analysisId) {
   const response = await fetch(endpoint(`/analyze/${analysisId}`), {
     method: "POST",

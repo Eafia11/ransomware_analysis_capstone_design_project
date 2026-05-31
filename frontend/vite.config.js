@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
         "/upload": backendTarget,
         "/analyze": backendTarget,
         "/result": backendTarget,
+        "/sandbox": backendTarget,
       },
     },
   };

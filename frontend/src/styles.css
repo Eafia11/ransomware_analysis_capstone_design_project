@@ -167,6 +167,103 @@ h3 {
   align-items: stretch;
 }
 
+.sandbox-section {
+  margin-bottom: 22px;
+}
+
+.sandbox-panel {
+  border-left: 4px solid #b42318;
+}
+
+.sandbox-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.95fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.exe-drop-zone {
+  min-height: 190px;
+  background: #fff8f5;
+  border-color: #d59a8a;
+}
+
+.exe-drop-zone:hover,
+.exe-drop-zone.dragging {
+  background: #fff0ea;
+  border-color: #b42318;
+}
+
+.runtime-control {
+  display: inline-grid;
+  grid-template-columns: auto 86px auto;
+  align-items: center;
+  gap: 8px;
+  color: #52615b;
+  font-size: 13px;
+}
+
+.runtime-control input {
+  width: 86px;
+  min-height: 36px;
+  padding: 0 9px;
+  color: #27352f;
+  background: #ffffff;
+  border: 1px solid #d3ddd5;
+  border-radius: 7px;
+}
+
+.sandbox-status-card {
+  min-height: 100%;
+  padding: 16px;
+  border: 1px solid #dce2db;
+  border-radius: 8px;
+  background: #f8faf6;
+}
+
+.sandbox-status-card.active {
+  border-color: #d8a63b;
+  background: #fff8e8;
+}
+
+.sandbox-status-card.done {
+  border-color: #9bcfad;
+  background: #effaf2;
+}
+
+.sandbox-status-card.failed {
+  border-color: #ffc8b4;
+  background: #fff0ea;
+}
+
+.sandbox-status-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.sandbox-status-header span,
+.sandbox-status-header strong {
+  display: block;
+}
+
+.sandbox-status-header span {
+  color: #697872;
+  font-size: 12px;
+}
+
+.sandbox-status-header strong {
+  margin-top: 4px;
+  color: #27352f;
+  font-size: 20px;
+}
+
+.sandbox-empty {
+  margin: 18px 0 0;
+  color: #697872;
+}
+
 .panel {
   background: #ffffff;
   border: 1px solid #dce2db;
@@ -889,6 +986,7 @@ code {
   }
 
   .layout-grid,
+  .sandbox-grid,
   .content-grid {
     grid-template-columns: 1fr;
   }
@@ -911,6 +1009,11 @@ code {
   .split-title {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .runtime-control {
+    width: 100%;
+    grid-template-columns: auto minmax(80px, 1fr) auto;
   }
 
   h1 {
