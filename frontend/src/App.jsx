@@ -28,6 +28,7 @@ import {
 const ACCEPTED_EXTENSIONS = [".json", ".jsonl", ".log", ".txt"];
 const EXE_EXTENSION = ".exe";
 const SANDBOX_TERMINAL_STATUSES = new Set(["terminated", "failed"]);
+const SANDBOX_STATUS_REFRESH_MS = 10000;
 
 const STEP_LABELS = [
   { key: "upload", label: "파일 업로드" },
@@ -422,7 +423,7 @@ function App() {
 
     const timer = window.setTimeout(() => {
       refreshSandboxStatus(sandboxSession.session_id);
-    }, 5000);
+    }, SANDBOX_STATUS_REFRESH_MS);
 
     return () => window.clearTimeout(timer);
   }, [sandboxSession?.session_id, sandboxSession?.status]);
