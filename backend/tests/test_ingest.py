@@ -63,6 +63,48 @@ def test_ingest_winlogbeat_rejects_empty_body():
     assert response.json()["detail"] == "Event body cannot be empty."
 
 
+def test_logs_endpoint_uses_winlogbeat_ingest_pipeline(monkeypatch, tmp_path):
+    records = {}
+
+    def fake_create_analysis(analysis):
+        records[analysis["analysis_id"]] = analysis
+        return analysis
+
+    def fake_get_analysis(analysis_id):
+        return records.get(analysis_id)
+
+    def fake_update_analysis(analysis_id, **updates):
+        records[analysis_id].update(updates)
+        return records[analysis_id]
+
+    monkeypatch.setattr(ingest_service.settings, "ingest_dir", tmp_path)
+    monkeypatch.setattr(ingest_service, "create_analysis", fake_create_analysis)
+    monkeypatch.setattr(ingest_service, "get_analysis", fake_get_analysis)
+    monkeypatch.setattr(ingest_service, "update_analysis", fake_update_analysis)
+
+    client = TestClient(app)
+    event = {
+        "@timestamp": "2026-05-29T10:00:00Z",
+        "winlog": {
+            "computer_name": "sandbox-win-01",
+            "channel": "Microsoft-Windows-Sysmon/Operational",
+            "event_id": 1,
+            "event_data": {"CommandLine": "calc.exe"},
+        },
+    }
+
+    response = client.post("/logs", json=event)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["analysis_id"]
+    assert body["stream_id"] == "sandbox-win-01"
+    assert body["source_host"] == "sandbox-win-01"
+    assert body["status"] == "uploaded"
+    assert body["event_count"] == 1
+    assert tmp_path.joinpath("sandbox-win-01.jsonl").is_file()
+
+
 def test_analyze_stream_reuses_existing_analysis_flow(monkeypatch):
     analysis_id = "stream-analysis-id"
 

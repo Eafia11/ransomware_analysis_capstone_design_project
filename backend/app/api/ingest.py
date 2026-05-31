@@ -16,6 +16,23 @@ def ingest_winlogbeat(
     stream_id: str | None = Query(default=None),
     analysis_id: str | None = Query(default=None),
 ):
+    return _ingest_event(event, stream_id=stream_id, analysis_id=analysis_id)
+
+
+@router.post("/logs", response_model=IngestResponse)
+def ingest_logstash_winlogbeat(
+    event: dict[str, Any] = Body(...),
+    stream_id: str | None = Query(default=None),
+    analysis_id: str | None = Query(default=None),
+):
+    return _ingest_event(event, stream_id=stream_id, analysis_id=analysis_id)
+
+
+def _ingest_event(
+    event: dict[str, Any],
+    stream_id: str | None = None,
+    analysis_id: str | None = None,
+):
     if not event:
         raise HTTPException(status_code=400, detail="Event body cannot be empty.")
 
