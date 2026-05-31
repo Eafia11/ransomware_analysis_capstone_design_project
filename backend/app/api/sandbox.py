@@ -1,15 +1,30 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    status,
+)
 
+from app.core.security import require_api_key
 from app.models.schemas import SandboxSessionResponse
 from app.services.sandbox_service import (
+    SandboxBusyError,
     create_sandbox_session,
     load_sandbox_session,
     run_sandbox_session,
 )
 
-router = APIRouter(prefix="/sandbox", tags=["sandbox"])
+router = APIRouter(
+    prefix="/sandbox",
+    tags=["sandbox"],
+    dependencies=[Depends(require_api_key)],
+)
 
 
 @router.post(
@@ -29,6 +44,8 @@ async def run_sandbox(
             content=content,
             runtime_seconds=runtime_seconds,
         )
+    except SandboxBusyError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

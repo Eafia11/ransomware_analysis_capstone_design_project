@@ -22,6 +22,19 @@ from app.utils.hash_utils import calculate_file_sha256, calculate_sha256
 
 
 SANDBOX_TAG = "netguardian-sandbox"
+ACTIVE_SANDBOX_STATUSES = {
+    "queued",
+    "launching",
+    "waiting_for_ssh",
+    "transferring",
+    "running",
+    "terminating",
+    "analyzing_logs",
+}
+
+
+class SandboxBusyError(ValueError):
+    """Raised when the configured sandbox concurrency limit is already reached."""
 
 
 def utc_now() -> datetime:
@@ -60,6 +73,50 @@ def update_sandbox_session(session_id: str, **updates: Any) -> dict[str, Any]:
     return save_sandbox_session(session)
 
 
+def iter_sandbox_sessions() -> list[dict[str, Any]]:
+    state_dir = ensure_directory(settings.sandbox_state_dir)
+    sessions: list[dict[str, Any]] = []
+    for path in state_dir.glob("*.json"):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                sessions.append(json.load(f))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return sessions
+
+
+def active_sandbox_sessions() -> list[dict[str, Any]]:
+    return [
+        session
+        for session in iter_sandbox_sessions()
+        if session.get("status") in ACTIVE_SANDBOX_STATUSES
+    ]
+
+
+def enforce_sandbox_capacity() -> None:
+    max_active = settings.sandbox_max_active_sessions
+    if max_active <= 0:
+        return
+
+    active = active_sandbox_sessions()
+    if len(active) < max_active:
+        return
+
+    active_session = sorted(active, key=lambda item: item.get("created_at", ""))[0]
+    raise SandboxBusyError(
+        "Another sandbox session is already active: "
+        f"{active_session.get('session_id')}"
+    )
+
+
+def capture_ingest_offsets() -> dict[str, int]:
+    ingest_dir = ensure_directory(settings.ingest_dir)
+    return {
+        file_path.name: count_lines(file_path)
+        for file_path in ingest_dir.glob("*.jsonl")
+    }
+
+
 def create_sandbox_session(
     filename: str,
     content: bytes,
@@ -81,9 +138,12 @@ def create_sandbox_session(
     if effective_runtime <= 0:
         raise ValueError("runtime_seconds must be greater than zero.")
 
+    enforce_sandbox_capacity()
+
     session_id = str(uuid.uuid4())
     saved_path = build_unique_file_path(settings.sandbox_upload_dir, session_id, filename)
     save_bytes(saved_path, content)
+    ingest_offsets = capture_ingest_offsets()
 
     now = iso_now()
     session = {
@@ -110,7 +170,10 @@ def create_sandbox_session(
         "analysis_error": None,
         "ingested_stream_id": None,
         "ingested_log_path": None,
+        "ingested_source_log_path": None,
+        "ingested_source_offset": None,
         "ingested_event_count": None,
+        "ingest_offsets": ingest_offsets,
     }
     return save_sandbox_session(session)
 
@@ -304,8 +367,28 @@ def count_lines(file_path: Path) -> int:
         return sum(1 for _ in f)
 
 
+def session_log_slices_dir() -> Path:
+    return ensure_directory(settings.ingest_dir / "sessions")
+
+
+def write_session_log_slice(
+    session_id: str,
+    stream_id: str,
+    lines: list[str],
+) -> Path:
+    safe_stream_id = "".join(
+        character if character.isalnum() or character in {"-", "_", "."} else "_"
+        for character in stream_id
+    )
+    slice_path = session_log_slices_dir() / f"{session_id}_{safe_stream_id}.jsonl"
+    with open(slice_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+    return slice_path
+
+
 def find_ingested_log_for_session(session: dict[str, Any]) -> dict[str, Any] | None:
     ingest_dir = ensure_directory(settings.ingest_dir)
+    ingest_offsets = session.get("ingest_offsets") or {}
     needles = [
         session.get("session_id"),
         session.get("remote_path"),
@@ -318,15 +401,30 @@ def find_ingested_log_for_session(session: dict[str, Any]) -> dict[str, Any] | N
         key=lambda path: path.stat().st_mtime,
         reverse=True,
     ):
+        source_offset = int(ingest_offsets.get(file_path.name, 0) or 0)
+        lines_after_offset: list[str] = []
+        matched = False
         with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
+            for line_number, line in enumerate(f, start=1):
+                if line_number <= source_offset:
+                    continue
+                lines_after_offset.append(line)
                 lowered_line = line.lower()
-                if any(term in lowered_line for term in search_terms):
-                    return {
-                        "stream_id": file_path.stem,
-                        "file_path": file_path,
-                        "event_count": count_lines(file_path),
-                    }
+                matched = matched or any(term in lowered_line for term in search_terms)
+
+        if matched and lines_after_offset:
+            slice_path = write_session_log_slice(
+                session["session_id"],
+                file_path.stem,
+                lines_after_offset,
+            )
+            return {
+                "stream_id": file_path.stem,
+                "file_path": slice_path,
+                "source_file_path": file_path,
+                "source_offset": source_offset,
+                "event_count": len(lines_after_offset),
+            }
 
     return None
 
@@ -391,6 +489,8 @@ def analyze_sandbox_logs(
         analysis_error=None,
         ingested_stream_id=stream_id,
         ingested_log_path=str(file_path),
+        ingested_source_log_path=str(match["source_file_path"]),
+        ingested_source_offset=match["source_offset"],
         ingested_event_count=match["event_count"],
         message="Analyzing collected Winlogbeat logs.",
     )

@@ -421,11 +421,11 @@ function App() {
       return undefined;
     }
 
-    const timer = window.setTimeout(() => {
+    const timer = window.setInterval(() => {
       refreshSandboxStatus(sandboxSession.session_id);
     }, SANDBOX_STATUS_REFRESH_MS);
 
-    return () => window.clearTimeout(timer);
+    return () => window.clearInterval(timer);
   }, [sandboxSession?.session_id, sandboxSession?.status]);
 
   function handleExeFile(file) {

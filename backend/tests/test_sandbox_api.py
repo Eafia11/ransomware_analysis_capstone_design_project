@@ -10,6 +10,7 @@ from app.main import app
 def test_sandbox_run_accepts_exe_and_schedules_background_task(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "sandbox_upload_dir", tmp_path / "sandbox_uploads")
     monkeypatch.setattr(settings, "sandbox_state_dir", tmp_path / "sandbox_sessions")
+    monkeypatch.setattr(settings, "api_key", None)
 
     started = []
 
@@ -36,6 +37,7 @@ def test_sandbox_run_accepts_exe_and_schedules_background_task(monkeypatch, tmp_
 def test_sandbox_run_rejects_non_exe(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "sandbox_upload_dir", tmp_path / "sandbox_uploads")
     monkeypatch.setattr(settings, "sandbox_state_dir", tmp_path / "sandbox_sessions")
+    monkeypatch.setattr(settings, "api_key", None)
 
     client = TestClient(app)
     response = client.post(
@@ -45,6 +47,26 @@ def test_sandbox_run_rejects_non_exe(monkeypatch, tmp_path):
 
     assert response.status_code == 400
     assert "Only .exe" in response.json()["detail"]
+
+
+def test_sandbox_run_requires_api_key_when_configured(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "sandbox_upload_dir", tmp_path / "sandbox_uploads")
+    monkeypatch.setattr(settings, "sandbox_state_dir", tmp_path / "sandbox_sessions")
+    monkeypatch.setattr(settings, "api_key", "test-secret")
+
+    client = TestClient(app)
+    missing = client.post(
+        "/sandbox/run",
+        files={"file": ("payload.exe", b"MZ fake exe", "application/octet-stream")},
+    )
+    wrong = client.post(
+        "/sandbox/run",
+        headers={"X-NetGuardian-Api-Key": "wrong"},
+        files={"file": ("payload.exe", b"MZ fake exe", "application/octet-stream")},
+    )
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
 
 
 def test_sandbox_status_returns_saved_session(monkeypatch, tmp_path):

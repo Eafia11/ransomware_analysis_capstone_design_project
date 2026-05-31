@@ -39,6 +39,25 @@ def test_create_sandbox_session_rejects_non_exe(monkeypatch, tmp_path):
         )
 
 
+def test_create_sandbox_session_rejects_when_another_session_is_active(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "sandbox_upload_dir", tmp_path / "sandbox_uploads")
+    monkeypatch.setattr(settings, "sandbox_state_dir", tmp_path / "sandbox_sessions")
+
+    active = sandbox_service.create_sandbox_session(
+        filename="first.exe",
+        content=b"MZ first",
+        runtime_seconds=60,
+    )
+    sandbox_service.update_sandbox_session(active["session_id"], status="running")
+
+    with pytest.raises(sandbox_service.SandboxBusyError, match=active["session_id"]):
+        sandbox_service.create_sandbox_session(
+            filename="second.exe",
+            content=b"MZ second",
+            runtime_seconds=60,
+        )
+
+
 def test_run_sandbox_session_launches_transfers_runs_and_terminates(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "sandbox_upload_dir", tmp_path / "sandbox_uploads")
     monkeypatch.setattr(settings, "sandbox_state_dir", tmp_path / "sandbox_sessions")
@@ -147,7 +166,7 @@ def test_analyze_sandbox_logs_finds_matching_ingested_stream(monkeypatch, tmp_pa
     )
 
     def fake_analyzer(file_path, analysis_id=None):
-        assert Path(file_path) == ingested_file
+        assert Path(file_path).read_text(encoding="utf-8")
         return {"summary": {"parsed_events": 1, "sysmon_events": 1}}
 
     updated = sandbox_service.analyze_sandbox_logs(
@@ -158,10 +177,80 @@ def test_analyze_sandbox_logs_finds_matching_ingested_stream(monkeypatch, tmp_pa
     assert updated["analysis_status"] == "completed"
     assert updated["analysis_id"]
     assert updated["ingested_stream_id"] == "winhost-01"
-    assert updated["ingested_log_path"] == str(ingested_file)
+    assert updated["ingested_log_path"].endswith(f"{session_id}_winhost-01.jsonl")
+    assert updated["ingested_source_log_path"] == str(ingested_file)
+    assert updated["ingested_source_offset"] == 0
     assert updated["ingested_event_count"] == 1
     assert updated["analysis_result"]["summary"]["parsed_events"] == 1
     assert status_updates == [(updated["analysis_id"], "analyzing")]
+
+
+def test_analyze_sandbox_logs_uses_session_log_slice_after_baseline(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "sandbox_upload_dir", tmp_path / "sandbox_uploads")
+    monkeypatch.setattr(settings, "sandbox_state_dir", tmp_path / "sandbox_sessions")
+    monkeypatch.setattr(settings, "ingest_dir", tmp_path / "ingested")
+
+    ingested_file = settings.ingest_dir / "winhost-01.jsonl"
+    ingested_file.parent.mkdir(parents=True, exist_ok=True)
+    ingested_file.write_text(
+        '{"message":"old event before sandbox","winlog":{"event_id":1}}\n',
+        encoding="utf-8",
+    )
+
+    session = sandbox_service.create_sandbox_session(
+        filename="payload.exe",
+        content=b"MZ fake exe",
+        runtime_seconds=30,
+    )
+    session_id = session["session_id"]
+    ingested_file.write_text(
+        ingested_file.read_text(encoding="utf-8")
+        + '{"message":"C:\\\\NetGuardian\\\\Samples\\\\'
+        + session_id
+        + '\\\\payload.exe","winlog":{"event_id":1}}\n'
+        + '{"message":"new event in same sandbox window","winlog":{"event_id":11}}\n',
+        encoding="utf-8",
+    )
+
+    records = {}
+    monkeypatch.setattr(sandbox_service, "get_analysis", lambda analysis_id: None)
+    monkeypatch.setattr(
+        sandbox_service,
+        "create_analysis",
+        lambda analysis: records.setdefault(analysis["analysis_id"], analysis),
+    )
+    monkeypatch.setattr(sandbox_service, "set_analysis_status", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        sandbox_service,
+        "set_analysis_result",
+        lambda analysis_id, result: records[analysis_id].update(
+            {"status": "completed", "result": result}
+        )
+        or records[analysis_id],
+    )
+
+    analyzer_paths = []
+
+    def fake_analyzer(file_path, analysis_id=None):
+        analyzer_paths.append(Path(file_path))
+        text = Path(file_path).read_text(encoding="utf-8")
+        assert "old event before sandbox" not in text
+        assert session_id in text
+        assert "new event in same sandbox window" in text
+        return {"summary": {"parsed_events": 2, "sysmon_events": 2}}
+
+    updated = sandbox_service.analyze_sandbox_logs(
+        session_id,
+        analyzer_func=fake_analyzer,
+    )
+
+    assert updated["analysis_status"] == "completed"
+    assert updated["ingested_stream_id"] == "winhost-01"
+    assert updated["ingested_event_count"] == 2
+    assert updated["ingested_source_log_path"] == str(ingested_file)
+    assert updated["ingested_source_offset"] == 1
+    assert analyzer_paths == [Path(updated["ingested_log_path"])]
+    assert analyzer_paths[0].name == f"{session_id}_winhost-01.jsonl"
 
 
 def test_transfer_and_execute_sample_clears_sysmon_before_process_start(monkeypatch, tmp_path):

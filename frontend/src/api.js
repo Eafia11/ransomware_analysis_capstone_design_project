@@ -1,7 +1,12 @@
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+const API_KEY = import.meta.env.VITE_NETGUARDIAN_API_KEY || "";
 
 function endpoint(path) {
   return `${API_BASE_URL}${path}`;
+}
+
+function authHeaders() {
+  return API_KEY ? { "X-NetGuardian-Api-Key": API_KEY } : {};
 }
 
 async function parseJsonResponse(response) {
@@ -44,6 +49,7 @@ export async function runSandboxExecutable(file, runtimeSeconds = null) {
 
   const response = await fetch(endpoint("/sandbox/run"), {
     method: "POST",
+    headers: authHeaders(),
     body: formData,
   });
 
@@ -51,7 +57,9 @@ export async function runSandboxExecutable(file, runtimeSeconds = null) {
 }
 
 export async function getSandboxStatus(sessionId) {
-  const response = await fetch(endpoint(`/sandbox/status/${sessionId}`));
+  const response = await fetch(endpoint(`/sandbox/status/${sessionId}`), {
+    headers: authHeaders(),
+  });
   return parseJsonResponse(response);
 }
 

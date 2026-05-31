@@ -28,7 +28,9 @@ class Settings(BaseModel):
     reports_dir: Path = DEFAULT_DATA_DIR / "reports"
     model_dir: Path = DEFAULT_MODEL_DIR
     xgboost_model_path: Path = DEFAULT_MODEL_DIR / "xgboost_model.json"
+    llm_model: str = "gpt-5.2"
     database_url: str = f"sqlite:///{(DEFAULT_DATA_DIR / 'app.db').as_posix()}"
+    api_key: str | None = None
     max_upload_size_bytes: int = 50 * 1024 * 1024
     allowed_upload_extensions: set[str] = {".json", ".jsonl", ".log", ".txt"}
     aws_region: str = "ap-southeast-2"
@@ -42,6 +44,7 @@ class Settings(BaseModel):
     sandbox_windows_ssh_key_path: Path | None = None
     sandbox_windows_remote_sample_dir: str = r"C:\NetGuardian\Samples"
     sandbox_runtime_seconds: int = 300
+    sandbox_max_active_sessions: int = 1
     sandbox_ssh_wait_seconds: int = 900
     sandbox_terminate_wait: bool = True
 
@@ -102,10 +105,12 @@ def get_settings() -> Settings:
             "XGBOOST_MODEL_PATH",
             model_dir / "xgboost_model.json",
         ),
+        llm_model=os.getenv("LLM_MODEL", Settings().llm_model),
         database_url=os.getenv(
             "DATABASE_URL",
             f"sqlite:///{(data_dir / 'app.db').as_posix()}",
         ),
+        api_key=os.getenv("NETGUARDIAN_API_KEY") or os.getenv("NG_API_KEY"),
         max_upload_size_bytes=int(
             os.getenv("MAX_UPLOAD_SIZE_BYTES", str(Settings().max_upload_size_bytes))
         ),
@@ -130,6 +135,12 @@ def get_settings() -> Settings:
         ),
         sandbox_runtime_seconds=int(
             os.getenv("SANDBOX_RUNTIME_SECONDS", str(Settings().sandbox_runtime_seconds))
+        ),
+        sandbox_max_active_sessions=int(
+            os.getenv(
+                "SANDBOX_MAX_ACTIVE_SESSIONS",
+                str(Settings().sandbox_max_active_sessions),
+            )
         ),
         sandbox_ssh_wait_seconds=int(
             os.getenv("SANDBOX_SSH_WAIT_SECONDS", str(Settings().sandbox_ssh_wait_seconds))

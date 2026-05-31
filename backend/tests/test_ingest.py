@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 from app.api import analyze as analyze_api
+from app.core.config import settings
 from app.main import app
 from app.services import ingest_service
 
@@ -64,6 +65,7 @@ def test_ingest_winlogbeat_rejects_empty_body():
 
 
 def test_logs_endpoint_uses_winlogbeat_ingest_pipeline(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "api_key", None)
     records = {}
 
     def fake_create_analysis(analysis):
@@ -103,6 +105,72 @@ def test_logs_endpoint_uses_winlogbeat_ingest_pipeline(monkeypatch, tmp_path):
     assert body["status"] == "uploaded"
     assert body["event_count"] == 1
     assert tmp_path.joinpath("sandbox-win-01.jsonl").is_file()
+
+
+def test_logs_endpoint_rejects_public_requests_when_api_key_is_configured(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "api_key", "test-secret")
+    monkeypatch.setattr(ingest_service.settings, "ingest_dir", tmp_path)
+
+    client = TestClient(app)
+    event = {
+        "winlog": {
+            "computer_name": "sandbox-win-01",
+            "channel": "Microsoft-Windows-Sysmon/Operational",
+            "event_id": 1,
+        },
+    }
+
+    missing = client.post(
+        "/logs",
+        headers={"X-Forwarded-For": "203.0.113.55"},
+        json=event,
+    )
+    wrong = client.post(
+        "/logs",
+        headers={
+            "X-Forwarded-For": "203.0.113.55",
+            "X-NetGuardian-Api-Key": "wrong",
+        },
+        json=event,
+    )
+
+    assert missing.status_code == 401
+    assert wrong.status_code == 401
+
+
+def test_logs_endpoint_allows_loopback_logstash_without_api_key(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "api_key", "test-secret")
+    records = {}
+
+    def fake_create_analysis(analysis):
+        records[analysis["analysis_id"]] = analysis
+        return analysis
+
+    monkeypatch.setattr(ingest_service.settings, "ingest_dir", tmp_path)
+    monkeypatch.setattr(ingest_service, "create_analysis", fake_create_analysis)
+    monkeypatch.setattr(ingest_service, "get_analysis", lambda analysis_id: records.get(analysis_id))
+    monkeypatch.setattr(
+        ingest_service,
+        "update_analysis",
+        lambda analysis_id, **updates: records[analysis_id].update(updates)
+        or records[analysis_id],
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        "/logs",
+        headers={"X-Forwarded-For": "127.0.0.1"},
+        json={
+            "winlog": {
+                "computer_name": "sandbox-win-01",
+                "channel": "Microsoft-Windows-Sysmon/Operational",
+                "event_id": 1,
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["stream_id"] == "sandbox-win-01"
 
 
 def test_analyze_stream_reuses_existing_analysis_flow(monkeypatch):

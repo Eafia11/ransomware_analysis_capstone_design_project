@@ -103,4 +103,6 @@ class SandboxSessionResponse(BaseModel):
     analysis_error: str | None = None
     ingested_stream_id: str | None = None
     ingested_log_path: str | None = None
+    ingested_source_log_path: str | None = None
+    ingested_source_offset: int | None = None
     ingested_event_count: int | None = None
