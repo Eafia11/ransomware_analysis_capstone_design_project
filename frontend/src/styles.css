@@ -1016,8 +1016,19 @@ code {
 }
 
 @media (max-width: 720px) {
+  html,
+  body,
+  #root,
+  .app-shell {
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+
   .workspace {
+    width: 100vw;
+    max-width: 100vw;
     padding: 22px 16px;
+    overflow-x: hidden;
   }
 
   .page-heading,
@@ -1041,6 +1052,9 @@ code {
   }
 
   .panel {
+    width: 100%;
+    max-width: 100%;
     padding: 18px;
+    overflow-x: hidden;
   }
 }
