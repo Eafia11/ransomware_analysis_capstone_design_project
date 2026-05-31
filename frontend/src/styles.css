@@ -182,6 +182,12 @@ h3 {
   align-items: stretch;
 }
 
+.sandbox-grid > *,
+.panel,
+.drop-zone {
+  min-width: 0;
+}
+
 .exe-drop-zone {
   min-height: 190px;
   background: #fff8f5;
@@ -205,6 +211,7 @@ h3 {
 
 .runtime-control input {
   width: 86px;
+  min-width: 0;
   min-height: 36px;
   padding: 0 9px;
   color: #27352f;
@@ -240,6 +247,7 @@ h3 {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 14px;
 }
 
@@ -317,10 +325,14 @@ h3 {
 }
 
 .drop-zone strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-size: 17px;
 }
 
 .drop-zone span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   color: #63716b;
   font-size: 13px;
 }
