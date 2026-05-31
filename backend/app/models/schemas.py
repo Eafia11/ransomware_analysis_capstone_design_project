@@ -68,6 +68,17 @@ class AnalyzeResponse(BaseModel):
     result: AnalysisResult | None = None
 
 
+class LlmReportResponse(BaseModel):
+    analysis_id: str
+    status: str
+    provider: str
+    model: str
+    response_id: str | None = None
+    report: str
+    saved_path: str
+    metadata_path: str
+
+
 class SandboxSessionResponse(BaseModel):
     session_id: str
     status: SandboxStatus
