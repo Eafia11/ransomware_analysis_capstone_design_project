@@ -193,6 +193,17 @@ def exec_checked(client: Any, command: str) -> str:
     return output
 
 
+def clear_sysmon_event_log(client: Any) -> None:
+    command = (
+        "powershell -NoProfile -ExecutionPolicy Bypass -Command "
+        "\"$logName = 'Microsoft-Windows-Sysmon/Operational'; "
+        "if (Get-WinEvent -ListLog $logName -ErrorAction SilentlyContinue) { "
+        "wevtutil.exe cl $logName "
+        "}\""
+    )
+    exec_checked(client, command)
+
+
 def connect_windows_ssh() -> Any:
     try:
         import paramiko  # type: ignore
@@ -245,6 +256,8 @@ def transfer_and_execute_sample(session: dict[str, Any]) -> str:
 
         with client.open_sftp() as sftp:
             sftp.put(str(local_path), sftp_path(remote_path))
+
+        clear_sysmon_event_log(client)
 
         execute_command = (
             "powershell -NoProfile -ExecutionPolicy Bypass -Command "
