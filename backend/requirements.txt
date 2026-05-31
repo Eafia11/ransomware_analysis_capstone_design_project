@@ -8,3 +8,5 @@ matplotlib
 SQLAlchemy
 pytest
 httpx
+boto3
+paramiko

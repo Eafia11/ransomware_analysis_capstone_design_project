@@ -38,11 +38,39 @@ export NG_WINDOWS_KEY_NAME=netguardian-key
 export NG_WINDOWS_SUBNET_ID=subnet-xxxxxxxxxxxxxxxxx
 export NG_WINDOWS_SECURITY_GROUP_IDS=sg-xxxxxxxxxxxxxxxxx
 export NG_WINDOWS_INSTANCE_TYPE=t3.small
+export NG_WINDOWS_SSH_USERNAME=Administrator
+export NG_WINDOWS_SSH_PASSWORD='<set on server only>'
+export SANDBOX_RUNTIME_SECONDS=300
 ```
 
 The security group should allow SSH from the operator IP and outbound traffic
 to the Ubuntu Logstash endpoint. The Ubuntu security group must allow inbound
 TCP `5044` from the Windows sandbox.
+
+Do not commit `NG_WINDOWS_SSH_PASSWORD` or AWS secrets. Keep them in the
+server-side environment file with restrictive permissions.
+
+## Backend API
+
+The FastAPI backend exposes a sandbox runner that accepts an executable file,
+starts a fresh Windows instance from the AMI, transfers the file over SSH/SFTP,
+executes it, waits for the configured runtime window, then terminates the
+instance.
+
+```bash
+curl -F "file=@sample.exe" \
+  -F "runtime_seconds=300" \
+  http://localhost:8000/sandbox/run
+```
+
+Check status:
+
+```bash
+curl http://localhost:8000/sandbox/status/<SESSION_ID>
+```
+
+This runner does not analyze logs by itself. Log collection and analysis remain
+separate flows.
 
 ## Launch and inspect
 

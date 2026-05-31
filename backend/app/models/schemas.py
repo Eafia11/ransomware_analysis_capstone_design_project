@@ -14,6 +14,17 @@ class AnalysisStatus(str, Enum):
     failed = "failed"
 
 
+class SandboxStatus(str, Enum):
+    queued = "queued"
+    launching = "launching"
+    waiting_for_ssh = "waiting_for_ssh"
+    transferring = "transferring"
+    running = "running"
+    terminating = "terminating"
+    terminated = "terminated"
+    failed = "failed"
+
+
 class HealthResponse(BaseModel):
     status: str
     service: str
@@ -54,3 +65,23 @@ class AnalyzeResponse(BaseModel):
     status: AnalysisStatus
     message: str
     result: AnalysisResult | None = None
+
+
+class SandboxSessionResponse(BaseModel):
+    session_id: str
+    status: SandboxStatus
+    filename: str
+    saved_path: str
+    sha256: str
+    runtime_seconds: int
+    created_at: str
+    updated_at: str
+    instance_id: str | None = None
+    public_ip: str | None = None
+    private_ip: str | None = None
+    remote_path: str | None = None
+    execution_started_at: str | None = None
+    scheduled_termination_at: str | None = None
+    terminated_at: str | None = None
+    error: str | None = None
+    message: str | None = None
