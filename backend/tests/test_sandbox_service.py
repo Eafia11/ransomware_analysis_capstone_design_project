@@ -67,6 +67,15 @@ def test_run_sandbox_session_launches_transfers_runs_and_terminates(monkeypatch,
     def fake_terminate(instance_id, wait):
         calls.append(("terminate", instance_id, wait))
 
+    def fake_analyze(session_id):
+        calls.append(("analyze_logs", session_id))
+        return sandbox_service.update_sandbox_session(
+            session_id,
+            analysis_id="analysis-123",
+            analysis_status="completed",
+            analysis_result={"summary": {"parsed_events": 1}},
+        )
+
     final_session = sandbox_service.run_sandbox_session(
         session["session_id"],
         launch_func=fake_launch,
@@ -74,19 +83,85 @@ def test_run_sandbox_session_launches_transfers_runs_and_terminates(monkeypatch,
         transfer_and_execute_func=fake_transfer,
         sleep_func=fake_sleep,
         terminate_func=fake_terminate,
+        analyze_collected_logs_func=fake_analyze,
     )
 
     assert final_session["status"] == "terminated"
     assert final_session["instance_id"] == "i-123"
     assert final_session["public_ip"] == "203.0.113.10"
     assert final_session["remote_path"] == r"C:\NetGuardian\Samples\sample.exe"
+    assert final_session["analysis_id"] == "analysis-123"
+    assert final_session["analysis_status"] == "completed"
+    assert final_session["analysis_result"]["summary"]["parsed_events"] == 1
     assert calls == [
         ("launch", session["session_id"]),
         ("wait_ssh", "203.0.113.10", 22, settings.sandbox_ssh_wait_seconds),
         ("transfer_execute", "i-123"),
         ("sleep", 30),
         ("terminate", "i-123", True),
+        ("analyze_logs", session["session_id"]),
     ]
+
+
+def test_analyze_sandbox_logs_finds_matching_ingested_stream(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "sandbox_upload_dir", tmp_path / "sandbox_uploads")
+    monkeypatch.setattr(settings, "sandbox_state_dir", tmp_path / "sandbox_sessions")
+    monkeypatch.setattr(settings, "ingest_dir", tmp_path / "ingested")
+
+    session = sandbox_service.create_sandbox_session(
+        filename="payload.exe",
+        content=b"MZ fake exe",
+        runtime_seconds=30,
+    )
+    session_id = session["session_id"]
+    ingested_file = settings.ingest_dir / "winhost-01.jsonl"
+    ingested_file.parent.mkdir(parents=True, exist_ok=True)
+    ingested_file.write_text(
+        '{"message":"C:\\\\NetGuardian\\\\Samples\\\\'
+        + session_id
+        + '\\\\payload.exe","winlog":{"event_id":1}}\n',
+        encoding="utf-8",
+    )
+
+    records = {}
+    status_updates = []
+
+    monkeypatch.setattr(sandbox_service, "get_analysis", lambda analysis_id: None)
+    monkeypatch.setattr(
+        sandbox_service,
+        "create_analysis",
+        lambda analysis: records.setdefault(analysis["analysis_id"], analysis),
+    )
+    monkeypatch.setattr(
+        sandbox_service,
+        "set_analysis_status",
+        lambda analysis_id, status: status_updates.append((analysis_id, status)),
+    )
+    monkeypatch.setattr(
+        sandbox_service,
+        "set_analysis_result",
+        lambda analysis_id, result: records[analysis_id].update(
+            {"status": "completed", "result": result}
+        )
+        or records[analysis_id],
+    )
+
+    def fake_analyzer(file_path, analysis_id=None):
+        assert Path(file_path) == ingested_file
+        return {"summary": {"parsed_events": 1, "sysmon_events": 1}}
+
+    updated = sandbox_service.analyze_sandbox_logs(
+        session_id,
+        analyzer_func=fake_analyzer,
+    )
+
+    assert updated["analysis_status"] == "completed"
+    assert updated["analysis_id"]
+    assert updated["ingested_stream_id"] == "winhost-01"
+    assert updated["ingested_log_path"] == str(ingested_file)
+    assert updated["ingested_event_count"] == 1
+    assert updated["analysis_result"]["summary"]["parsed_events"] == 1
+    assert status_updates == [(updated["analysis_id"], "analyzing")]
 
 
 def test_transfer_and_execute_sample_clears_sysmon_before_process_start(monkeypatch, tmp_path):

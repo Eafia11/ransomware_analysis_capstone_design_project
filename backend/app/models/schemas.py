@@ -21,6 +21,7 @@ class SandboxStatus(str, Enum):
     transferring = "transferring"
     running = "running"
     terminating = "terminating"
+    analyzing_logs = "analyzing_logs"
     terminated = "terminated"
     failed = "failed"
 
@@ -85,3 +86,10 @@ class SandboxSessionResponse(BaseModel):
     terminated_at: str | None = None
     error: str | None = None
     message: str | None = None
+    analysis_id: str | None = None
+    analysis_status: str | None = None
+    analysis_result: AnalysisResult | None = None
+    analysis_error: str | None = None
+    ingested_stream_id: str | None = None
+    ingested_log_path: str | None = None
+    ingested_event_count: int | None = None

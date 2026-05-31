@@ -9,8 +9,16 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.core.config import settings
+from app.services.report_service import analyze_winlogbeat_file
+from app.services.storage import (
+    create_analysis,
+    get_analysis,
+    set_analysis_result,
+    set_analysis_status,
+    update_analysis,
+)
 from app.utils.file_utils import build_unique_file_path, ensure_directory, save_bytes
-from app.utils.hash_utils import calculate_sha256
+from app.utils.hash_utils import calculate_file_sha256, calculate_sha256
 
 
 SANDBOX_TAG = "netguardian-sandbox"
@@ -96,6 +104,13 @@ def create_sandbox_session(
         "terminated_at": None,
         "error": None,
         "message": "Sandbox run queued.",
+        "analysis_id": None,
+        "analysis_status": None,
+        "analysis_result": None,
+        "analysis_error": None,
+        "ingested_stream_id": None,
+        "ingested_log_path": None,
+        "ingested_event_count": None,
     }
     return save_sandbox_session(session)
 
@@ -280,6 +295,128 @@ def terminate_windows_instance(instance_id: str, wait: bool = True) -> None:
         instance.wait_until_terminated()
 
 
+def analysis_id_for_stream(stream_id: str) -> str:
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"winlogbeat-stream:{stream_id}"))
+
+
+def count_lines(file_path: Path) -> int:
+    with open(file_path, "r", encoding="utf-8") as f:
+        return sum(1 for _ in f)
+
+
+def find_ingested_log_for_session(session: dict[str, Any]) -> dict[str, Any] | None:
+    ingest_dir = ensure_directory(settings.ingest_dir)
+    needles = [
+        session.get("session_id"),
+        session.get("remote_path"),
+        Path(session["saved_path"]).name if session.get("saved_path") else None,
+    ]
+    search_terms = [str(value).lower() for value in needles if value]
+
+    for file_path in sorted(
+        ingest_dir.glob("*.jsonl"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    ):
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                lowered_line = line.lower()
+                if any(term in lowered_line for term in search_terms):
+                    return {
+                        "stream_id": file_path.stem,
+                        "file_path": file_path,
+                        "event_count": count_lines(file_path),
+                    }
+
+    return None
+
+
+def ensure_stream_analysis_record(
+    analysis_id: str,
+    stream_id: str,
+    file_path: Path,
+) -> dict[str, Any]:
+    sha256 = calculate_file_sha256(file_path)
+    filename = file_path.name
+    existing = get_analysis(analysis_id)
+
+    if existing is None:
+        return create_analysis(
+            {
+                "analysis_id": analysis_id,
+                "filename": filename,
+                "saved_path": str(file_path),
+                "sha256": sha256,
+                "status": "uploaded",
+            }
+        )
+
+    return update_analysis(
+        analysis_id,
+        filename=filename,
+        saved_path=str(file_path),
+        sha256=sha256,
+        status="uploaded",
+        result=None,
+        error=None,
+    ) or existing
+
+
+def analyze_sandbox_logs(
+    session_id: str,
+    analyzer_func: Callable[..., dict[str, Any]] = analyze_winlogbeat_file,
+) -> dict[str, Any]:
+    session = load_sandbox_session(session_id)
+    if session is None:
+        raise ValueError(f"Sandbox session not found: {session_id}")
+
+    match = find_ingested_log_for_session(session)
+    if match is None:
+        return update_sandbox_session(
+            session_id,
+            analysis_status="logs_not_found",
+            analysis_error="No ingested Winlogbeat stream matched this sandbox session.",
+            message="Sandbox completed, but matching logs were not found.",
+        )
+
+    stream_id = match["stream_id"]
+    file_path = match["file_path"]
+    analysis_id = analysis_id_for_stream(stream_id)
+    ensure_stream_analysis_record(analysis_id, stream_id, file_path)
+
+    session = update_sandbox_session(
+        session_id,
+        analysis_id=analysis_id,
+        analysis_status="analyzing",
+        analysis_error=None,
+        ingested_stream_id=stream_id,
+        ingested_log_path=str(file_path),
+        ingested_event_count=match["event_count"],
+        message="Analyzing collected Winlogbeat logs.",
+    )
+    set_analysis_status(analysis_id, "analyzing")
+
+    try:
+        result = analyzer_func(str(file_path), analysis_id=analysis_id)
+    except Exception as exc:
+        update_analysis(analysis_id, status="failed", error=str(exc))
+        return update_sandbox_session(
+            session_id,
+            analysis_status="failed",
+            analysis_error=str(exc),
+            message="Sandbox completed, but log analysis failed.",
+        )
+
+    set_analysis_result(analysis_id, result)
+    return update_sandbox_session(
+        session_id,
+        analysis_status="completed",
+        analysis_result=result,
+        analysis_error=None,
+        message="Sandbox completed and collected logs were analyzed.",
+    )
+
+
 def run_sandbox_session(
     session_id: str,
     launch_func: Callable[[dict[str, Any]], dict[str, str | None]] = launch_windows_instance,
@@ -287,6 +424,7 @@ def run_sandbox_session(
     transfer_and_execute_func: Callable[[dict[str, Any]], str] = transfer_and_execute_sample,
     sleep_func: Callable[[int], None] = time.sleep,
     terminate_func: Callable[[str, bool], None] = terminate_windows_instance,
+    analyze_collected_logs_func: Callable[[str], dict[str, Any]] = analyze_sandbox_logs,
 ) -> dict[str, Any]:
     session = update_sandbox_session(
         session_id,
@@ -339,11 +477,18 @@ def run_sandbox_session(
         )
         terminate_func(session["instance_id"], settings.sandbox_terminate_wait)
 
+        session = update_sandbox_session(
+            session_id,
+            status="analyzing_logs",
+            message="Runtime window elapsed; analyzing collected logs.",
+        )
+        session = analyze_collected_logs_func(session_id)
+
         return update_sandbox_session(
             session_id,
             status="terminated",
             terminated_at=iso_now(),
-            message="Sandbox instance terminated after runtime window.",
+            message=session.get("message") or "Sandbox instance terminated after runtime window.",
         )
     except Exception as exc:
         failed_session = update_sandbox_session(

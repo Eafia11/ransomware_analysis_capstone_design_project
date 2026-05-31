@@ -119,6 +119,7 @@ function sandboxStatusLabel(status) {
     transferring: "EXE 전송 중",
     running: "샘플 실행 중",
     terminating: "인스턴스 종료 중",
+    analyzing_logs: "로그 분석 중",
     terminated: "실행 완료",
     failed: "실패",
   };
@@ -452,7 +453,7 @@ function App() {
     setIsRefreshingSandbox(true);
     try {
       const nextSession = await getSandboxStatus(sessionId);
-      setSandboxSession(nextSession);
+      applySandboxSession(nextSession);
       setSandboxError("");
     } catch (statusError) {
       setSandboxError(statusError.message || "샌드박스 상태 조회 중 오류가 발생했습니다.");
@@ -467,15 +468,40 @@ function App() {
     setSandboxError("");
     setIsSubmittingSandbox(true);
     setSandboxSession(null);
+    resetResult();
 
     try {
       const session = await runSandboxExecutable(selectedExeFile, sandboxRuntimeSeconds);
-      setSandboxSession(session);
+      applySandboxSession(session);
     } catch (runError) {
       setSandboxError(runError.message || "샌드박스 실행 요청 중 오류가 발생했습니다.");
     } finally {
       setIsSubmittingSandbox(false);
     }
+  }
+
+  function applySandboxSession(nextSession) {
+    setSandboxSession(nextSession);
+
+    if (!nextSession?.analysis_result) return;
+
+    setUploadMeta({
+      analysis_id: nextSession.analysis_id,
+      filename: nextSession.ingested_stream_id
+        ? `${nextSession.ingested_stream_id}.jsonl`
+        : nextSession.filename,
+      saved_path: nextSession.ingested_log_path || "",
+      sha256: nextSession.sha256,
+      status: "completed",
+    });
+    setAnalysisRecord({
+      analysis_id: nextSession.analysis_id,
+      status: "completed",
+      result: nextSession.analysis_result,
+    });
+    setCompletedSteps(["upload", "analyze", "report"]);
+    setActiveStep(null);
+    setActiveTab("overview");
   }
 
   function resetResult() {
@@ -712,9 +738,37 @@ function App() {
                       <dd>{sandboxSession.remote_path || "-"}</dd>
                     </div>
                     <div>
+                      <dt>로그 분석 상태</dt>
+                      <dd>{sandboxSession.analysis_status || "-"}</dd>
+                    </div>
+                    <div>
+                      <dt>로그 분석 ID</dt>
+                      <dd>{sandboxSession.analysis_id || "-"}</dd>
+                    </div>
+                    <div>
+                      <dt>수집 로그</dt>
+                      <dd>{sandboxSession.ingested_log_path || "-"}</dd>
+                    </div>
+                    <div>
+                      <dt>수집 이벤트</dt>
+                      <dd>{sandboxSession.ingested_event_count ?? "-"}</dd>
+                    </div>
+                    <div>
                       <dt>SHA-256</dt>
                       <dd>{sandboxSession.sha256}</dd>
                     </div>
+                    {sandboxSession.analysis_result && (
+                      <div>
+                        <dt>결과 표시</dt>
+                        <dd>아래 분석 대시보드에 자동 반영됨</dd>
+                      </div>
+                    )}
+                    {sandboxSession.analysis_error && (
+                      <div>
+                        <dt>분석 오류</dt>
+                        <dd>{sandboxSession.analysis_error}</dd>
+                      </div>
+                    )}
                     {sandboxSession.error && (
                       <div>
                         <dt>오류</dt>
