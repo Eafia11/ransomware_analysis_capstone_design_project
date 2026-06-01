@@ -1,112 +1,99 @@
-# AWS Windows sandbox control
+# AWS Windows 샌드박스
 
-This project can manage disposable Windows EC2 analysis sandboxes from the
-Ubuntu NetGuardian server. The script uses the AWS credentials configured on
-the Ubuntu host, normally `~/.aws/credentials`, and does not store secrets in
-the repository.
+## 목적
 
-## What belongs in the AMI
+AWS Windows 인스턴스를 임시 샌드박스로 사용해 샘플을 실행하고, 수집된 로그를 분석 파이프라인으로 연결하는 선택 기능입니다. 발표 시 필수 기능은 아니며, 네트워크와 AWS 환경에 영향을 받으므로 안정적인 시연에는 저장된 샘플 로그 사용을 권장합니다.
 
-Prepare one Windows instance with:
+## API
 
-- OpenSSH Server enabled for `Administrator` access.
-- Sysmon installed and running.
-- Winlogbeat installed and configured to send to the Ubuntu Logstash host on
-  TCP `5044`.
-- Any malware-analysis tooling needed for the capstone demo.
+샌드박스 실행:
 
-Then create an AMI from that prepared instance:
-
-```bash
-python scripts/ec2_sandbox.py create-ami \
-  --instance-id i-xxxxxxxxxxxxxxxxx \
-  --name netguardian-windows-sandbox-YYYYMMDD
+```http
+POST /sandbox/run
 ```
 
-The AMI stores the Windows disk state. It does not store which security group
-must be attached at launch time, so pass the security group when creating each
-new sandbox instance.
+상태 조회:
 
-## Ubuntu environment
-
-Set these values on the Ubuntu server before launching instances:
-
-```bash
-export AWS_REGION=ap-southeast-2
-export NG_WINDOWS_AMI_ID=ami-xxxxxxxxxxxxxxxxx
-export NG_WINDOWS_KEY_NAME=netguardian-key
-export NG_WINDOWS_SUBNET_ID=subnet-xxxxxxxxxxxxxxxxx
-export NG_WINDOWS_SECURITY_GROUP_IDS=sg-xxxxxxxxxxxxxxxxx
-export NG_WINDOWS_INSTANCE_TYPE=t3.small
-export NG_WINDOWS_SSH_USERNAME=Administrator
-export NG_WINDOWS_SSH_PASSWORD='<set on server only>'
-export SANDBOX_RUNTIME_SECONDS=300
+```http
+GET /sandbox/status/{session_id}
 ```
 
-The security group should allow SSH from the operator IP and outbound traffic
-to the Ubuntu Logstash endpoint. The Ubuntu security group must allow inbound
-TCP `5044` from the Windows sandbox.
+두 API 모두 `X-NetGuardian-Api-Key` 헤더가 필요합니다.
 
-Do not commit `NG_WINDOWS_SSH_PASSWORD` or AWS secrets. Keep them in the
-server-side environment file with restrictive permissions.
+## 상태 흐름
 
-## Backend API
-
-The FastAPI backend exposes a sandbox runner that accepts an executable file,
-starts a fresh Windows instance from the AMI, transfers the file over SSH/SFTP,
-executes it, waits for the configured runtime window, then terminates the
-instance.
-
-```bash
-curl -F "file=@sample.exe" \
-  -F "runtime_seconds=300" \
-  http://localhost:8000/sandbox/run
+```text
+queued
+-> launching
+-> waiting_for_ssh
+-> transferring
+-> running
+-> terminating
+-> analyzing_logs
+-> terminated
 ```
 
-Check status:
+오류 발생 시:
 
-```bash
-curl http://localhost:8000/sandbox/status/<SESSION_ID>
+```text
+failed
 ```
 
-This runner does not analyze logs by itself. Log collection and analysis remain
-separate flows.
+## 환경 변수
 
-## Launch and inspect
-
-Launch a fresh Windows sandbox:
-
-```bash
-python scripts/ec2_sandbox.py launch --wait
+```text
+NETGUARDIAN_API_KEY
+AWS_REGION
+NG_WINDOWS_AMI_ID
+NG_WINDOWS_KEY_NAME
+NG_WINDOWS_SUBNET_ID
+NG_WINDOWS_SECURITY_GROUP_IDS
+NG_WINDOWS_INSTANCE_TYPE
+NG_WINDOWS_SSH_USERNAME
+NG_WINDOWS_SSH_PASSWORD
+NG_WINDOWS_SSH_KEY_PATH
+NG_WINDOWS_REMOTE_SAMPLE_DIR
+SANDBOX_RUNTIME_SECONDS
+SANDBOX_MAX_ACTIVE_SESSIONS
+SANDBOX_SSH_WAIT_SECONDS
+SANDBOX_LOG_WAIT_SECONDS
+SANDBOX_LOG_POLL_INTERVAL_SECONDS
+SANDBOX_TERMINATE_WAIT
 ```
 
-Show active NetGuardian instances:
+## 내부 처리
 
-```bash
-python scripts/ec2_sandbox.py status
+구현 위치:
+
+```text
+backend/app/services/sandbox_service.py
 ```
 
-Wait for SSH if the instance was launched without `--wait`:
+처리 개요:
 
-```bash
-python scripts/ec2_sandbox.py wait-ssh --host <WINDOWS_PUBLIC_IP>
+```text
+sample upload
+-> sandbox session 생성
+-> Windows EC2 instance 시작
+-> SSH 대기
+-> sample 전송
+-> 제한 시간 동안 실행
+-> instance 종료
+-> ingested log slice 분석
+-> analysis_result 저장
 ```
 
-Connect from your machine or the Ubuntu server:
+## 보안 주의
 
-```bash
-ssh Administrator@<WINDOWS_PUBLIC_IP>
-```
+- 실제 악성 샘플은 격리된 네트워크에서만 실행합니다.
+- 샌드박스 보안 그룹은 최소 권한으로 구성합니다.
+- 실행 후 인스턴스 종료와 세션 상태를 반드시 확인합니다.
+- 샘플 파일, 로그, API key, SSH key는 외부 저장소에 노출하지 않습니다.
 
-## Cleanup
+## 시연 권장 방식
 
-Terminate a sandbox after each malware run:
+실시간 AWS 샌드박스 실행은 실패 변수가 많습니다. 발표에서는 다음 순서를 권장합니다.
 
-```bash
-python scripts/ec2_sandbox.py terminate \
-  --instance-id i-xxxxxxxxxxxxxxxxx \
-  --wait
-```
-
-Do not reuse a sandbox after running malware. Launch a new instance from the
-prepared AMI for the next run.
+1. 저장된 샘플 로그로 기본 분석 흐름을 시연합니다.
+2. 샌드박스 API와 상태 흐름을 화면 또는 문서로 설명합니다.
+3. 시간이 충분하고 네트워크가 안정적일 때만 실제 실행을 선택합니다.

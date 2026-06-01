@@ -1,3 +1,7 @@
+from pathlib import Path
+
+from app.core.config import settings
+from app.services import llm_report_service
 from app.services.report_service import build_llm_report
 
 
@@ -55,3 +59,41 @@ def test_build_llm_report_contains_korean_prompt_and_evidence_contract():
     assert llm_report["suspicious_processes"][0]["reasons"] == [
         "\ubcf5\uad6c \ubc29\ud574 \uba85\ub839 \uc2e4\ud589"
     ]
+
+
+def test_create_ai_analysis_report_calls_responses_api_and_saves_artifacts(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "openai_api_key", "test-key")
+    monkeypatch.setattr(settings, "llm_model", "gpt-test")
+    monkeypatch.setattr(settings, "reports_dir", tmp_path)
+
+    captured = {}
+
+    class FakeResponse:
+        id = "resp_test"
+        output_text = "AI 보고서 본문"
+
+    class FakeResponses:
+        def create(self, **kwargs):
+            captured.update(kwargs)
+            return FakeResponse()
+
+    class FakeClient:
+        responses = FakeResponses()
+
+    response = llm_report_service.create_ai_analysis_report(
+        analysis_id="analysis-llm",
+        result={
+            "llm_report": {
+                "analysis_id": "analysis-llm",
+                "summary": {"risk_level": "high"},
+            }
+        },
+        client_factory=lambda **kwargs: FakeClient(),
+    )
+
+    assert captured["model"] == "gpt-test"
+    assert "Do not invent evidence" in captured["instructions"]
+    assert '"risk_level": "high"' in captured["input"]
+    assert response["report"] == "AI 보고서 본문"
+    assert Path(response["saved_path"]).read_text(encoding="utf-8") == "AI 보고서 본문"
+    assert Path(response["metadata_path"]).exists()

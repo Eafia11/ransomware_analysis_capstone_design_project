@@ -94,7 +94,7 @@ http://127.0.0.1:8000/docs
 샘플 Winlogbeat 로그는 아래 위치에 있습니다.
 
 ```text
-collector/sample_inputs/winlogbeat_sample.json
+collector/sample_inputs/winlogbeat_sample-20260415.jsonl
 ```
 
 백엔드가 실행 중인 상태에서 샘플 로그를 업로드하고 바로 분석하려면 다음 명령을 사용합니다.
@@ -165,7 +165,7 @@ LLM 모듈은 이 JSON을 입력으로 받아 자연어 분석 보고서를 작�
 원본 ML 데이터는 Winlogbeat/Sysmon JSON 또는 JSONL 로그를 사용합니다. 기본 입력은 아래 파일입니다.
 
 ```text
-ml/data/raw/sample_logs.json
+collector/sample_inputs/winlogbeat_sample-20260415.jsonl
 ```
 
 `ransom.csv`는 참고용 원본 데이터로 보관할 수 있지만, 현재 백엔드에 연결되는 모델은 정적 PE 피처가 아니라 동적 공격 체인 피처로 학습합니다.
@@ -246,7 +246,7 @@ collector/scripts/watch_log.ps1
 백엔드 실행용 Docker Compose 파일이 포함되어 있습니다.
 
 ```bash
-docker compose up
+docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 컨테이너 내부에서는 다음 명령으로 백엔드를 실행합니다.
@@ -295,12 +295,16 @@ E2E 분석 파이프라인
 - 실행 스크립트 정리
 - Docker Compose 기본 구성
 - 백엔드 테스트 코드
+- React 프론트엔드 기본 연동
+- OpenAI 기반 LLM 보고서 생성 API
+- AWS Windows 샌드박스 실행/상태 API
 
-남은 항목:
+보강하면 좋은 항목:
 
 - MITRE 매핑 룰 보강
-- 프론트엔드 연동
-- LLM 보고서 생성 모듈 구현
+- 더 다양한 정상/의심 로그 샘플 확보
+- Docker 설치 환경에서 실제 Compose 실행 검증
+- 발표용 데모 데이터와 화면 캡처 정리
 
 ## 운영 배포 빠른 실행
 
@@ -364,8 +368,11 @@ npm run build
 운영과 시연 문서:
 
 ```text
+docs/README.md
 docs/architecture.md
 docs/api_spec.md
+docs/testing.md
+docs/llm_report.md
 docs/aws_logstash_setup.md
 docs/winlogbeat_setup.md
 docs/demo_scenario.md

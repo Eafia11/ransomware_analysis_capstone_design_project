@@ -1,4 +1,4 @@
-# Ransomware Samples
+# 랜섬웨어 샘플 안내
 
 본 디렉토리는 Sysmon 기반 랜섬웨어 행위 분석 프로젝트의 샘플 저장소입니다.
 모든 샘플은 **격리된 Windows 가상머신 내부에서만** 압축 해제 및 실행해야 합니다.
@@ -165,7 +165,7 @@ PCLocked 계열 랜섬웨어로, 분석 결과 RustyStealer 관련 태그가 함
 3. 이벤트 로그 수집 시작 (`wevtutil` 또는 Event Viewer)
 4. ZIP 압축 해제 (비밀번호 `infected`) → 나온 `.exe` 실행
 5. 일정 시간 경과 후 이벤트 로그 export (`.evtx`)
-6. 수집된 로그를 호스트의 `analyzer/`로 안전하게 이동
+6. 수집된 로그를 호스트의 `data/ingested/`로 안전하게 이동
 7. VM 스냅샷 롤백으로 감염 상태 완전 제거
 
 ## 법적·윤리적 고지

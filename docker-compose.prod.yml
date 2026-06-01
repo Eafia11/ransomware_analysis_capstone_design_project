@@ -41,4 +41,5 @@ services:
       - ./deploy/logstash/pipeline:/usr/share/logstash/pipeline:ro
     environment:
       LS_JAVA_OPTS: "-Xms512m -Xmx512m"
+      NETGUARDIAN_API_KEY: ${NETGUARDIAN_API_KEY:-}
     restart: unless-stopped

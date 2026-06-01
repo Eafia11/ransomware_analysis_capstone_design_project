@@ -423,6 +423,13 @@ h3 {
   background: #1f5e3e;
 }
 
+.compact-button {
+  width: auto;
+  min-height: 38px;
+  margin-top: 0;
+  padding: 0 14px;
+}
+
 .primary-button:disabled,
 .ghost-button:disabled {
   cursor: not-allowed;
@@ -760,6 +767,10 @@ td {
   background: #ffffff;
   border: 1px solid #dce2db;
   border-radius: 8px;
+}
+
+.report-error {
+  margin: 0 0 14px;
 }
 
 .report-text {

@@ -19,6 +19,7 @@ import {
 import {
   analyzeFile,
   checkHealth,
+  generateLlmReport,
   getAnalysisResult,
   getSandboxStatus,
   runSandboxExecutable,
@@ -387,6 +388,8 @@ function App() {
   const [activeStep, setActiveStep] = useState(null);
   const [completedSteps, setCompletedSteps] = useState([]);
   const [error, setError] = useState("");
+  const [llmReportError, setLlmReportError] = useState("");
+  const [isGeneratingLlmReport, setIsGeneratingLlmReport] = useState(false);
   const [analysisRecord, setAnalysisRecord] = useState(null);
   const [uploadMeta, setUploadMeta] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
@@ -409,6 +412,8 @@ function App() {
     () => buildNarrativeReport(result, mitreTechniques, iocs),
     [result, mitreTechniques, iocs],
   );
+  const displayedReport = result?.ai_report || narrativeReport;
+  const hasAiReport = Boolean(result?.ai_report);
 
   useEffect(() => {
     checkHealth()
@@ -510,6 +515,7 @@ function App() {
     setUploadMeta(null);
     setActiveStep(null);
     setCompletedSteps([]);
+    setLlmReportError("");
     setActiveTab("overview");
   }
 
@@ -560,6 +566,26 @@ function App() {
     } catch (analysisError) {
       setError(analysisError.message || "분석 중 오류가 발생했습니다.");
       setActiveStep(null);
+    }
+  }
+
+  async function runLlmReportGeneration() {
+    if (!analysisId || analysisId === "analysis" || !result) return;
+
+    setLlmReportError("");
+    setIsGeneratingLlmReport(true);
+
+    try {
+      const reportResponse = await generateLlmReport(analysisId);
+      const refreshedRecord = await getAnalysisResult(analysisId);
+      setAnalysisRecord(refreshedRecord);
+      setActiveTab("report");
+      return reportResponse;
+    } catch (reportError) {
+      setLlmReportError(reportError.message || "AI 보고서 생성 중 오류가 발생했습니다.");
+      return null;
+    } finally {
+      setIsGeneratingLlmReport(false);
     }
   }
 
@@ -928,9 +954,13 @@ function App() {
             {result && activeTab === "overview" && <OverviewTab result={result} />}
             {result && activeTab === "report" && (
               <ReportTab
-                report={narrativeReport}
-                onCopy={() => navigator.clipboard.writeText(narrativeReport)}
-                onDownload={() => downloadText(`${analysisId}_narrative_report.txt`, narrativeReport)}
+                report={displayedReport}
+                hasAiReport={hasAiReport}
+                isGenerating={isGeneratingLlmReport}
+                error={llmReportError}
+                onGenerate={runLlmReportGeneration}
+                onCopy={() => navigator.clipboard.writeText(displayedReport)}
+                onDownload={() => downloadText(`${analysisId}_${hasAiReport ? "ai" : "narrative"}_report.txt`, displayedReport)}
               />
             )}
             {result && activeTab === "iocs" && <IocTab iocs={iocs} />}
@@ -1027,15 +1057,40 @@ function OverviewTab({ result }) {
   );
 }
 
-function ReportTab({ report, onCopy, onDownload }) {
+function ReportTab({
+  report,
+  hasAiReport,
+  isGenerating,
+  error,
+  onGenerate,
+  onCopy,
+  onDownload,
+}) {
   return (
     <section className="report-panel">
       <div className="panel-title split-title">
         <div>
-          <h2>자연어 분석 보고서</h2>
-          <span>현재 분석 JSON을 기반으로 생성한 요약 보고서입니다.</span>
+          <h2>{hasAiReport ? "AI 분석 보고서" : "자연어 분석 보고서"}</h2>
+          <span>
+            {hasAiReport
+              ? "백엔드 LLM API가 생성한 최종 분석 보고서입니다."
+              : "현재 분석 JSON을 기반으로 생성한 요약 보고서입니다."}
+          </span>
         </div>
         <div className="button-row">
+          <button
+            className="primary-button compact-button"
+            type="button"
+            onClick={onGenerate}
+            disabled={isGenerating}
+          >
+            {isGenerating ? (
+              <Loader2 className="spin" size={16} aria-hidden="true" />
+            ) : (
+              <FileSearch size={16} aria-hidden="true" />
+            )}
+            AI 보고서 생성
+          </button>
           <button className="ghost-button" type="button" onClick={onCopy}>
             <Clipboard size={16} aria-hidden="true" />
             복사
@@ -1046,6 +1101,15 @@ function ReportTab({ report, onCopy, onDownload }) {
           </button>
         </div>
       </div>
+      {error && (
+        <div className="error-banner report-error">
+          <AlertTriangle size={17} aria-hidden="true" />
+          <div>
+            <strong>AI 보고서 생성 실패</strong>
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
       <pre className="report-text">{report}</pre>
     </section>
   );

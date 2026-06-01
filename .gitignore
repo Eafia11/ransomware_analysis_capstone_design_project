@@ -213,6 +213,8 @@ samples/ransomware/*
 !samples/ransomware/.gitkeep
 samples/expected_outputs/*
 !samples/expected_outputs/.gitkeep
+ml/data/raw/*
+!ml/data/raw/.gitkeep
 data/app.db*
 data/uploads/*
 !data/uploads/.gitkeep

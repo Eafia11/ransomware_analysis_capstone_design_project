@@ -75,3 +75,12 @@ export async function getAnalysisResult(analysisId) {
   const response = await fetch(endpoint(`/result/${analysisId}`));
   return parseJsonResponse(response);
 }
+
+export async function generateLlmReport(analysisId) {
+  const response = await fetch(endpoint(`/llm-report/${analysisId}`), {
+    method: "POST",
+    headers: authHeaders(),
+  });
+
+  return parseJsonResponse(response);
+}

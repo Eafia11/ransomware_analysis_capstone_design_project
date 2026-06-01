@@ -1,113 +1,134 @@
-# 데모 시나리오
+# 시연 시나리오
 
-이 문서는 발표 또는 시연에서 랜섬웨어 분석 파이프라인을 안정적으로 보여주기 위한 순서를 정리한다.
+## 목표
 
-## 시연 목표
-
-```text
-분석 VM에서 이벤트 발생
--> Winlogbeat가 Logstash로 전송
--> FastAPI ingest API가 이벤트 저장
--> 분석 실행
--> 프론트엔드에서 위험도, 룰 근거, MITRE evidence, IOC, LLM 입력 JSON 확인
-```
+캡스톤 발표에서 “로그 업로드 → 분석 → 탐지 결과 → MITRE/IOC → LLM 보고서” 흐름을 짧고 안정적으로 보여주는 시나리오입니다.
 
 ## 사전 준비
 
-AWS EC2:
+필수:
+
+```text
+Python dependencies 설치
+backend 실행 가능
+frontend build 가능
+collector/sample_inputs/winlogbeat_sample-20260415.jsonl 존재
+```
+
+선택:
+
+```text
+OPENAI_API_KEY 설정
+Docker 설치
+AWS sandbox 환경 구성
+```
+
+## 1. 백엔드 실행
 
 ```bash
-cd /opt/netguardian
-docker compose -f docker-compose.prod.yml up -d --build
-docker compose -f docker-compose.prod.yml ps
-curl http://localhost/health
+scripts/run_backend.bat
 ```
 
-분석 VM:
-
-```powershell
-Get-Service Sysmon64
-Get-Service winlogbeat
-Test-NetConnection <EC2_PUBLIC_IP> -Port 5044
-```
-
-프론트엔드:
+API 문서:
 
 ```text
-http://<EC2_PUBLIC_IP>/
+http://127.0.0.1:8000/docs
 ```
 
-## 정상 파일 오탐 방어 시연
+상태 확인:
 
-목표: 설치 파일처럼 이벤트가 많은 정상 실행이 바로 high로 올라가지 않는지 확인한다.
+```bash
+curl http://127.0.0.1:8000/health
+```
 
-1. 정상 설치 파일 또는 샘플 정상 로그를 업로드한다.
-2. 분석을 실행한다.
-3. 결과 화면에서 위험도가 낮음 또는 중간인지 확인한다.
-4. 룰 탐지 근거가 랜섬웨어 특화 행위 없이 일반 이벤트 수만으로 과하게 판단하지 않는지 설명한다.
+## 2. 샘플 로그 분석
 
-확인 포인트:
+```bash
+python collector/scripts/send_sample_log.py --analyze
+```
+
+이 명령은 다음 과정을 한 번에 수행합니다.
 
 ```text
-복구 방해 명령 없음
-랜섬노트 없음
-암호화 확장자 없음
-Run key 또는 PowerShell 다운로드 조합 없음
+POST /upload
+POST /analyze/{analysis_id}
 ```
 
-## 랜섬웨어 의심 행위 시연
+분석 결과에서 설명할 포인트:
 
-안전한 실습 환경에서 실제 악성코드 대신 행위 재현 스크립트 또는 준비된 샘플 로그를 사용한다.
+- `risk_level`
+- `key_findings`
+- `iocs`
+- `mitre_attack`
+- `suspicious_results`
+- `artifact_paths`
 
-대표 행위:
+## 3. 산출물 확인
 
 ```text
-vssadmin delete shadows /all /quiet
-다량 파일 생성 또는 변경
-.locked, .encrypted, .crypt, .enc 확장자 생성
-HOW_TO_DECRYPT, RECOVER_FILES 계열 랜섬노트 생성
-PowerShell 다운로드 명령
-Run key 등록
-외부 네트워크 연결
+data/parsed/
+data/normalized/
+data/analyzed/
+data/reports/
 ```
 
-분석 흐름:
+가장 설명하기 좋은 파일:
 
-1. 분석 VM에서 이벤트를 발생시킨다.
-2. EC2에서 Logstash 로그를 확인한다.
-3. 프론트엔드에서 stream 분석 또는 업로드 분석을 실행한다.
-4. 결과 화면에서 위험도, 공격 체인, 룰 근거, MITRE evidence, IOC를 확인한다.
-5. LLM 입력 JSON을 다운로드하거나 복사해 자연어 보고서 생성 모듈에 넘긴다.
+```text
+data/reports/{analysis_id}_analysis_report.json
+data/reports/{analysis_id}_llm_input.json
+data/analyzed/{analysis_id}_suspicious_only.json
+```
+
+## 4. 프론트엔드 확인
+
+개발 서버:
+
+```bash
+cd frontend
+npm run dev
+```
+
+빌드 검증:
+
+```bash
+cd frontend
+npm run build
+```
+
+## 5. LLM 보고서 생성
+
+`.env` 또는 실행 환경에 다음 값이 필요합니다.
+
+```text
+OPENAI_API_KEY
+LLM_MODEL=gpt-5.2
+NETGUARDIAN_API_KEY
+```
+
+API:
+
+```http
+POST /llm-report/{analysis_id}
+```
+
+생성 파일:
+
+```text
+data/reports/{analysis_id}_ai_report.md
+```
 
 ## 발표 설명 순서
 
-1. 왜 Sysmon/Winlogbeat/Logstash 구조를 선택했는지 설명한다.
-2. 백엔드는 단순 로그 저장이 아니라 정규화, 공격 체인 생성, 룰 탐지, ML 보조 판정, IOC 추출, MITRE 매핑을 수행한다고 설명한다.
-3. 룰 탐지는 단일 이벤트보다 조합을 더 중요하게 본다고 설명한다.
-4. XGBoost는 룰 탐지를 대체하지 않고 보조 신호로 사용한다고 설명한다.
-5. MITRE 매핑은 technique ID만 보여주는 것이 아니라 evidence와 confidence를 포함한다고 설명한다.
-6. 최종 JSON은 프론트엔드와 LLM 보고서 생성 모듈이 공통으로 사용하는 계약이라고 설명한다.
+1. Winlogbeat/Sysmon 로그를 수집한다.
+2. 백엔드가 이벤트를 파싱하고 정규화한다.
+3. Sysmon 핵심 이벤트로 공격 체인을 만든다.
+4. 룰 기반 탐지와 ML 보조 판정을 수행한다.
+5. IOC와 MITRE ATT&CK mapping을 생성한다.
+6. 프론트엔드와 LLM 보고서가 사용할 수 있는 JSON 산출물을 저장한다.
 
-## 장애 대응 포인트
+## 안전한 시연 원칙
 
-Winlogbeat 이벤트가 안 들어올 때:
-
-```powershell
-.\winlogbeat.exe test output -c .\winlogbeat.yml
-Test-NetConnection <EC2_PUBLIC_IP> -Port 5044
-```
-
-EC2에서 확인:
-
-```bash
-docker compose -f docker-compose.prod.yml logs -f logstash
-docker compose -f docker-compose.prod.yml logs -f backend
-ls -al data/ingested
-```
-
-프론트엔드가 백엔드와 연결되지 않을 때:
-
-```bash
-curl http://localhost/health
-docker compose -f docker-compose.prod.yml logs -f frontend
-```
+- 발표 현장에서는 실제 악성코드를 실행하지 않습니다.
+- 이미 수집된 샘플 로그를 사용합니다.
+- 샌드박스 기능은 네트워크/클라우드 상태에 따라 실패할 수 있으므로 선택 시연으로 둡니다.

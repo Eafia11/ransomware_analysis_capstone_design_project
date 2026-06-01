@@ -6,7 +6,7 @@ set "LOG_PATH=%~1"
 set "MODEL_PATH=%~2"
 
 if "%LOG_PATH%"=="" (
-    set "LOG_PATH=%PROJECT_DIR%ml\data\raw\sample_logs.json"
+    set "LOG_PATH=%PROJECT_DIR%collector\sample_inputs\winlogbeat_sample-20260415.jsonl"
 ) else (
     if exist "%PROJECT_DIR%%LOG_PATH%" (
         set "LOG_PATH=%PROJECT_DIR%%LOG_PATH%"

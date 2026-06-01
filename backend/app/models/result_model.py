@@ -76,6 +76,8 @@ class AnalysisResult(BaseModel):
     key_findings: list[str] = Field(default_factory=list)
     iocs: dict[str, list[str]] = Field(default_factory=dict)
     llm_report: dict[str, Any] = Field(default_factory=dict)
+    ai_report: str | None = None
+    ai_report_metadata: dict[str, Any] = Field(default_factory=dict)
     attack_chains: list[AttackChain] = Field(default_factory=list)
     abstracted_attack_chains: list[AbstractedAttackChain] = Field(default_factory=list)
     rule_results: list[RuleDetectionResult] = Field(default_factory=list)

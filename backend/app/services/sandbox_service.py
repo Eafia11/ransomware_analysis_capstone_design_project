@@ -463,12 +463,22 @@ def ensure_stream_analysis_record(
 def analyze_sandbox_logs(
     session_id: str,
     analyzer_func: Callable[..., dict[str, Any]] = analyze_winlogbeat_file,
+    sleep_func: Callable[[int], None] = time.sleep,
 ) -> dict[str, Any]:
     session = load_sandbox_session(session_id)
     if session is None:
         raise ValueError(f"Sandbox session not found: {session_id}")
 
+    wait_seconds = max(settings.sandbox_log_wait_seconds, 0)
+    poll_interval = max(settings.sandbox_log_poll_interval_seconds, 1)
+    deadline = time.time() + wait_seconds
     match = find_ingested_log_for_session(session)
+
+    while match is None and time.time() < deadline:
+        sleep_func(min(poll_interval, max(1, int(deadline - time.time()) or 1)))
+        session = load_sandbox_session(session_id) or session
+        match = find_ingested_log_for_session(session)
+
     if match is None:
         return update_sandbox_session(
             session_id,

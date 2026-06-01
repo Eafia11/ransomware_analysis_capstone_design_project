@@ -253,6 +253,52 @@ def test_analyze_sandbox_logs_uses_session_log_slice_after_baseline(monkeypatch,
     assert analyzer_paths[0].name == f"{session_id}_winhost-01.jsonl"
 
 
+def test_analyze_sandbox_logs_waits_for_delayed_ingest(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "sandbox_upload_dir", tmp_path / "sandbox_uploads")
+    monkeypatch.setattr(settings, "sandbox_state_dir", tmp_path / "sandbox_sessions")
+    monkeypatch.setattr(settings, "ingest_dir", tmp_path / "ingested")
+    monkeypatch.setattr(settings, "sandbox_log_wait_seconds", 60)
+    monkeypatch.setattr(settings, "sandbox_log_poll_interval_seconds", 5)
+
+    session = sandbox_service.create_sandbox_session(
+        filename="payload.exe",
+        content=b"MZ fake exe",
+        runtime_seconds=30,
+    )
+    session_id = session["session_id"]
+    ingested_file = settings.ingest_dir / "winhost-01.jsonl"
+    sleep_calls = []
+
+    def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+        ingested_file.parent.mkdir(parents=True, exist_ok=True)
+        ingested_file.write_text(
+            '{"message":"C:\\\\NetGuardian\\\\Samples\\\\'
+            + session_id
+            + '\\\\payload.exe","winlog":{"event_id":1}}\n',
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(sandbox_service, "get_analysis", lambda analysis_id: None)
+    monkeypatch.setattr(
+        sandbox_service,
+        "create_analysis",
+        lambda analysis: analysis,
+    )
+    monkeypatch.setattr(sandbox_service, "set_analysis_status", lambda *args, **kwargs: None)
+    monkeypatch.setattr(sandbox_service, "set_analysis_result", lambda *args, **kwargs: None)
+
+    updated = sandbox_service.analyze_sandbox_logs(
+        session_id,
+        analyzer_func=lambda *args, **kwargs: {"summary": {"parsed_events": 1}},
+        sleep_func=fake_sleep,
+    )
+
+    assert sleep_calls == [5]
+    assert updated["analysis_status"] == "completed"
+    assert updated["ingested_stream_id"] == "winhost-01"
+
+
 def test_transfer_and_execute_sample_clears_sysmon_before_process_start(monkeypatch, tmp_path):
     sample_path = tmp_path / "payload.exe"
     sample_path.write_bytes(b"MZ fake exe")

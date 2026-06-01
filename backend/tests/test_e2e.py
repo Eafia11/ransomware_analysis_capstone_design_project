@@ -27,6 +27,8 @@ RESULT_KEYS = {
     "key_findings",
     "iocs",
     "llm_report",
+    "ai_report",
+    "ai_report_metadata",
     "attack_chains",
     "abstracted_attack_chains",
     "rule_results",

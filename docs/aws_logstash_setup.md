@@ -1,130 +1,94 @@
-# AWS Logstash 설정 가이드
+# AWS Logstash 연동
 
-이 문서는 분석 VM의 Winlogbeat 이벤트를 AWS EC2의 Logstash로 받고, Logstash가 FastAPI ingest API로 전달하는 운영 구성을 설명한다.
+## 목적
 
-## 목표 구조
+Winlogbeat가 Windows VM에서 수집한 이벤트를 EC2의 Logstash로 보내고, Logstash가 백엔드 `/logs` API로 전달하는 구성입니다.
 
-```text
-Windows 분석 VM
-  Sysmon + Winlogbeat
-        |
-        | TCP 5044
-        v
-AWS EC2
-  Logstash -> http://backend:8000/ingest/winlogbeat
-  Nginx    -> React frontend + FastAPI reverse proxy
-```
-
-## EC2 준비
-
-권장 사양:
+## 전체 흐름
 
 ```text
-Ubuntu 22.04 LTS 이상
-2 vCPU / 4GB RAM 이상
-20GB 디스크 이상
+Windows VM
+-> Winlogbeat
+-> Logstash 5044/tcp
+-> backend POST /logs
+-> data/ingested/
+-> POST /analyze/stream/{analysis_id}
 ```
 
-필수 패키지:
+## 서버 실행
 
 ```bash
-sudo apt update
-sudo apt install -y git docker.io docker-compose-plugin
-sudo systemctl enable --now docker
-sudo usermod -aG docker $USER
-```
-
-`usermod` 적용 후 SSH를 다시 접속한다.
-
-## 프로젝트 배포
-
-```bash
-sudo mkdir -p /opt/netguardian
-sudo chown -R $USER:$USER /opt/netguardian
-git clone <REPOSITORY_URL> /opt/netguardian
-cd /opt/netguardian
 cp .env.example .env
 docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml ps
 ```
 
-상태 확인:
+Logstash 로그 확인:
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
 docker compose -f docker-compose.prod.yml logs -f logstash
-curl http://localhost/health
 ```
 
-## Logstash 파이프라인
+## Logstash pipeline
 
-운영 파이프라인 파일:
+설정 파일:
 
 ```text
 deploy/logstash/pipeline/winlogbeat-to-backend.conf
 ```
 
-동작:
+Logstash는 Beats input으로 이벤트를 받고 HTTP output으로 backend에 전달합니다.
+
+백엔드 endpoint:
 
 ```text
-input  : beats, port 5044
-output : http://backend:8000/ingest/winlogbeat
+POST /logs
 ```
 
-Winlogbeat 이벤트가 들어오면 Logstash는 이벤트 JSON을 그대로 백엔드 ingest API에 POST한다.
-
-## systemd 자동 시작
-
-EC2 재부팅 후 자동 실행:
-
-```bash
-sudo cp deploy/systemd/netguardian.service /etc/systemd/system/netguardian.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now netguardian
-sudo systemctl status netguardian
-```
-
-재시작:
-
-```bash
-sudo systemctl restart netguardian
-```
-
-## AWS 보안 그룹
-
-최소 권장 규칙:
+API key를 사용할 경우 `.env`에 설정합니다.
 
 ```text
-22/tcp   관리자 SSH IP만 허용
-80/tcp   프론트엔드 접근 IP 허용
-5044/tcp 분석 VM 또는 실습망 IP만 허용
-8000/tcp 외부 개방 금지
+NETGUARDIAN_API_KEY=<secret>
 ```
 
-FastAPI `8000`은 Nginx와 Logstash 컨테이너 내부에서만 접근한다.
+## Winlogbeat 설정
+
+Windows VM의 `winlogbeat.yml`에서 output을 Logstash로 변경합니다.
+
+```yaml
+output.logstash:
+  hosts: ["<EC2_PUBLIC_IP>:5044"]
+```
+
+파일 출력 설정과 Logstash 출력 설정은 동시에 사용하지 않는 것을 권장합니다. 테스트 목적이라면 파일 출력으로 먼저 확인한 뒤 Logstash 출력으로 전환합니다.
+
+## 보안 그룹
+
+EC2 inbound rule:
+
+```text
+5044/tcp  Windows 분석 VM IP만 허용
+80/tcp    관리자/시연 접근 IP 허용
+22/tcp    관리자 SSH IP만 허용
+```
+
+## 확인 절차
+
+1. EC2에서 Logstash 컨테이너가 실행 중인지 확인합니다.
+2. Windows VM에서 `winlogbeat test output`을 실행합니다.
+3. 이벤트가 들어오면 `data/ingested/`에 JSONL 파일이 생성되는지 확인합니다.
+4. 생성된 `analysis_id`로 `/analyze/stream/{analysis_id}`를 호출합니다.
 
 ## 장애 확인
 
-Logstash 수신 여부:
-
 ```bash
 docker compose -f docker-compose.prod.yml logs -f logstash
+docker compose -f docker-compose.prod.yml logs -f backend
 ```
 
-백엔드 ingest API 상태:
+주요 원인:
 
-```bash
-curl http://localhost/health
-ls -al data/ingested
-```
-
-프론트 접근:
-
-```text
-http://<EC2_PUBLIC_IP>/
-```
-
-분석 VM에서 5044 연결 확인:
-
-```powershell
-Test-NetConnection <EC2_PUBLIC_IP> -Port 5044
-```
+- 보안 그룹에서 5044 포트가 닫힘
+- Winlogbeat output host 오타
+- `NETGUARDIAN_API_KEY` 불일치
+- backend 컨테이너 미실행

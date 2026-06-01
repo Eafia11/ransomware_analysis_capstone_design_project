@@ -8,6 +8,7 @@ from app.api.upload import router as upload_router
 from app.api.result import router as result_router
 from app.api.analyze import router as analyze_router
 from app.api.sandbox import router as sandbox_router
+from app.api.llm_report import router as llm_report_router
 from app.core.config import settings
 from app.core.logger import configure_logging
 from app.db.session import init_db
@@ -44,6 +45,7 @@ app.include_router(upload_router)
 app.include_router(result_router)
 app.include_router(analyze_router)
 app.include_router(sandbox_router)
+app.include_router(llm_report_router)
 
 @app.get("/")
 def root():

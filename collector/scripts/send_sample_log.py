@@ -7,7 +7,7 @@ from urllib import request
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_SAMPLE = PROJECT_ROOT / "collector" / "sample_inputs" / "winlogbeat_sample.json"
+DEFAULT_SAMPLE = PROJECT_ROOT / "collector" / "sample_inputs" / "winlogbeat_sample-20260415.jsonl"
 DEFAULT_BACKEND_URL = "http://127.0.0.1:8000"
 
 

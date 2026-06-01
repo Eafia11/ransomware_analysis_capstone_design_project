@@ -29,6 +29,7 @@ class Settings(BaseModel):
     model_dir: Path = DEFAULT_MODEL_DIR
     xgboost_model_path: Path = DEFAULT_MODEL_DIR / "xgboost_model.json"
     llm_model: str = "gpt-5.2"
+    openai_api_key: str | None = None
     database_url: str = f"sqlite:///{(DEFAULT_DATA_DIR / 'app.db').as_posix()}"
     api_key: str | None = None
     max_upload_size_bytes: int = 50 * 1024 * 1024
@@ -46,6 +47,8 @@ class Settings(BaseModel):
     sandbox_runtime_seconds: int = 300
     sandbox_max_active_sessions: int = 1
     sandbox_ssh_wait_seconds: int = 900
+    sandbox_log_wait_seconds: int = 60
+    sandbox_log_poll_interval_seconds: int = 5
     sandbox_terminate_wait: bool = True
 
 
@@ -106,6 +109,7 @@ def get_settings() -> Settings:
             model_dir / "xgboost_model.json",
         ),
         llm_model=os.getenv("LLM_MODEL", Settings().llm_model),
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
         database_url=os.getenv(
             "DATABASE_URL",
             f"sqlite:///{(data_dir / 'app.db').as_posix()}",
@@ -144,6 +148,15 @@ def get_settings() -> Settings:
         ),
         sandbox_ssh_wait_seconds=int(
             os.getenv("SANDBOX_SSH_WAIT_SECONDS", str(Settings().sandbox_ssh_wait_seconds))
+        ),
+        sandbox_log_wait_seconds=int(
+            os.getenv("SANDBOX_LOG_WAIT_SECONDS", str(Settings().sandbox_log_wait_seconds))
+        ),
+        sandbox_log_poll_interval_seconds=int(
+            os.getenv(
+                "SANDBOX_LOG_POLL_INTERVAL_SECONDS",
+                str(Settings().sandbox_log_poll_interval_seconds),
+            )
         ),
         sandbox_terminate_wait=_bool_from_env(
             "SANDBOX_TERMINATE_WAIT",

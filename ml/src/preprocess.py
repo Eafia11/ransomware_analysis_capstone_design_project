@@ -29,7 +29,7 @@ from app.services.winlogbeat_parser import parse_winlogbeat_file  # noqa: E402
 
 ML_ROOT = Path(__file__).resolve().parents[1]
 RAW_DATA_DIR = ML_ROOT / "data" / "raw"
-RAW_DATA_PATH = RAW_DATA_DIR / "sample_logs.json"
+RAW_DATA_PATH = PROJECT_ROOT / "collector" / "sample_inputs" / "winlogbeat_sample-20260415.jsonl"
 PROCESSED_DIR = ML_ROOT / "data" / "processed"
 MODELS_DIR = ML_ROOT / "models"
 FEATURES_PATH = PROCESSED_DIR / "features.csv"
@@ -40,7 +40,6 @@ FEATURE_COLUMNS_PATH = MODELS_DIR / "feature_columns.json"
 
 DEFAULT_LOG_PATHS = [
     RAW_DATA_PATH,
-    PROJECT_ROOT / "collector" / "sample_inputs" / "winlogbeat_sample.json",
 ]
 LABEL_BY_DIRECTORY = {
     "benign": "benign",

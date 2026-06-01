@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-LOG_PATH="${1:-ml/data/raw/sample_logs.json}"
+LOG_PATH="${1:-collector/sample_inputs/winlogbeat_sample-20260415.jsonl}"
 MODEL_PATH="${2:-}"
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
