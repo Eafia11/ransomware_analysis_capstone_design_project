@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
         "/analyze": backendTarget,
         "/result": backendTarget,
         "/sandbox": backendTarget,
+        "/llm-report": backendTarget,
       },
     },
   };

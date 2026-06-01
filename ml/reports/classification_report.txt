@@ -1,8 +1,8 @@
               precision    recall  f1-score   support
 
-      benign       1.00      1.00      1.00       384
-  suspicious       1.00      1.00      1.00         8
+      benign       1.00      0.98      0.99      2200
+  suspicious       0.98      1.00      0.99      2186
 
-    accuracy                           1.00       392
-   macro avg       1.00      1.00      1.00       392
-weighted avg       1.00      1.00      1.00       392
+    accuracy                           0.99      4386
+   macro avg       0.99      0.99      0.99      4386
+weighted avg       0.99      0.99      0.99      4386

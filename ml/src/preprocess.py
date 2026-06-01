@@ -29,7 +29,8 @@ from app.services.winlogbeat_parser import parse_winlogbeat_file  # noqa: E402
 
 ML_ROOT = Path(__file__).resolve().parents[1]
 RAW_DATA_DIR = ML_ROOT / "data" / "raw"
-RAW_DATA_PATH = PROJECT_ROOT / "collector" / "sample_inputs" / "winlogbeat_sample-20260415.jsonl"
+RAW_DATA_PATH = RAW_DATA_DIR / "ransom.csv"
+SAMPLE_LOG_PATH = PROJECT_ROOT / "collector" / "sample_inputs" / "winlogbeat_sample-20260415.jsonl"
 PROCESSED_DIR = ML_ROOT / "data" / "processed"
 MODELS_DIR = ML_ROOT / "models"
 FEATURES_PATH = PROCESSED_DIR / "features.csv"
@@ -40,6 +41,7 @@ FEATURE_COLUMNS_PATH = MODELS_DIR / "feature_columns.json"
 
 DEFAULT_LOG_PATHS = [
     RAW_DATA_PATH,
+    SAMPLE_LOG_PATH,
 ]
 LABEL_BY_DIRECTORY = {
     "benign": "benign",
@@ -56,13 +58,12 @@ def preprocess_dataset(
     csv_path: str | Path | None = None,
     label_column: str | None = None,
 ) -> dict[str, str | int | list[str]]:
-    """Build a dynamic-analysis training set from Winlogbeat/Sysmon logs.
+    """Build a training set from dynamic behavior features.
 
-    csv_path and label_column are accepted for backward CLI compatibility, but
-    this pipeline intentionally trains on behavior-chain features instead of PE
-    static-analysis columns.
+    Winlogbeat/Sysmon logs are converted into process-chain features. The
+    bundled ransom.csv is also supported when it contains dynamic behavior
+    columns such as registry, network, process, and file activity counts.
     """
-    del label_column
     source_paths = resolve_log_paths(log_paths, csv_path)
 
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
@@ -70,7 +71,10 @@ def preprocess_dataset(
 
     rows = []
     for path in source_paths:
-        rows.extend(extract_labeled_chain_rows(path))
+        if is_supported_dynamic_csv(path):
+            rows.extend(extract_labeled_rows_from_dynamic_csv(path, label_column))
+        else:
+            rows.extend(extract_labeled_chain_rows(path))
 
     if include_seed_rows:
         rows.extend(build_seed_rows())
@@ -103,7 +107,7 @@ def preprocess_dataset(
         json.dump(ML_FEATURE_COLUMNS, f, ensure_ascii=False, indent=2)
 
     return {
-        "source_logs": [str(path) for path in source_paths],
+        "source_inputs": [str(path) for path in source_paths],
         "rows": int(len(features)),
         "train_rows": int(len(train)),
         "test_rows": int(len(test)),
@@ -138,9 +142,124 @@ def resolve_log_paths(
             existing.append(resolved)
 
     if not existing:
-        raise FileNotFoundError("No Winlogbeat log files were found for preprocessing.")
+        raise FileNotFoundError("No dynamic CSV or Winlogbeat log files were found for preprocessing.")
 
     return existing
+
+
+def is_supported_dynamic_csv(path: str | Path) -> bool:
+    path = Path(path)
+    if path.suffix.lower() != ".csv":
+        return False
+
+    columns = set(pd.read_csv(path, nrows=0).columns)
+    required_any = {
+        "registry_total",
+        "network_connections",
+        "processes_malicious",
+        "processes_suspicious",
+        "total_procsses",
+        "files_malicious",
+        "files_suspicious",
+    }
+    return bool(columns & required_any)
+
+
+def extract_labeled_rows_from_dynamic_csv(
+    csv_path: str | Path,
+    label_column: str | None = None,
+) -> list[dict[str, Any]]:
+    dataset = pd.read_csv(csv_path)
+    rows = []
+
+    for _, source in dataset.iterrows():
+        features = extract_dynamic_csv_features(source)
+        label = label_from_dynamic_csv_row(source, label_column)
+        rows.append({**features, "label": label})
+
+    return rows
+
+
+def extract_dynamic_csv_features(row: pd.Series) -> dict[str, Any]:
+    process_count = _numeric(row, "total_procsses") or sum(
+        _numeric(row, column)
+        for column in [
+            "processes_malicious",
+            "processes_suspicious",
+            "processes_monitored",
+        ]
+    )
+    file_count = sum(
+        _numeric(row, column)
+        for column in [
+            "files_malicious",
+            "files_suspicious",
+            "files_text",
+            "files_unknown",
+        ]
+    )
+    registry_modify_count = _numeric(row, "registry_write") + _numeric(row, "registry_delete")
+    registry_total = _numeric(row, "registry_total") or (
+        _numeric(row, "registry_read") + registry_modify_count
+    )
+    network_count = sum(
+        _numeric(row, column)
+        for column in [
+            "network_connections",
+            "network_http",
+            "network_dns",
+            "network_threats",
+        ]
+    )
+    malicious_process_count = _numeric(row, "processes_malicious")
+    suspicious_process_count = _numeric(row, "processes_suspicious")
+    malicious_file_count = _numeric(row, "files_malicious")
+    suspicious_file_count = _numeric(row, "files_suspicious")
+
+    behavior_flags = [
+        process_count > 0,
+        file_count > 0,
+        registry_total > 0,
+        network_count > 0,
+    ]
+
+    return {
+        "event_count": int(process_count + file_count + registry_total + network_count),
+        "process_create_count": int(process_count),
+        "file_create_count": int(file_count),
+        "registry_modify_count": int(registry_modify_count),
+        "network_connect_count": int(network_count),
+        "uses_suspicious_process": int((malicious_process_count + suspicious_process_count) > 0),
+        "uses_suspicious_command": int(
+            (
+                _numeric(row, "network_threats")
+                + malicious_file_count
+                + suspicious_file_count
+                + malicious_process_count
+                + _numeric(row, "registry_delete")
+            )
+            > 0
+        ),
+        "has_multiple_behaviors": int(sum(behavior_flags) >= 2),
+    }
+
+
+def label_from_dynamic_csv_row(row: pd.Series, label_column: str | None = None) -> str:
+    column = label_column if label_column and label_column in row.index else "Class"
+    value = str(row.get(column, "")).strip().lower()
+
+    if value in {"benign", "clean", "normal", "0", "false"}:
+        return "benign"
+
+    return "suspicious"
+
+
+def _numeric(row: pd.Series, column: str) -> float:
+    value = row.get(column, 0)
+    converted = pd.to_numeric(value, errors="coerce")
+    if pd.isna(converted):
+        return 0.0
+    return float(converted)
 
 
 def extract_labeled_chain_rows(log_path: str | Path) -> list[dict[str, Any]]:

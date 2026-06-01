@@ -162,13 +162,13 @@ LLM 모듈은 이 JSON을 입력으로 받아 자연어 분석 보고서를 작�
 
 ## ML 파이프라인
 
-원본 ML 데이터는 Winlogbeat/Sysmon JSON 또는 JSONL 로그를 사용합니다. 기본 입력은 아래 파일입니다.
+원본 ML 데이터는 동적 행위 컬럼이 포함된 `ransom.csv`와 Winlogbeat/Sysmon JSON 또는 JSONL 로그를 사용합니다. 기본 입력은 아래 파일입니다.
 
 ```text
-collector/sample_inputs/winlogbeat_sample-20260415.jsonl
+ml/data/raw/ransom.csv
 ```
 
-`ransom.csv`는 참고용 원본 데이터로 보관할 수 있지만, 현재 백엔드에 연결되는 모델은 정적 PE 피처가 아니라 동적 공격 체인 피처로 학습합니다.
+`ransom.csv`의 정적 PE 컬럼은 모델 입력에서 제외하고, `registry_*`, `network_*`, `processes_*`, `files_*` 같은 동적 행위 컬럼을 백엔드 공격 체인 피처와 같은 8개 feature로 변환해 학습합니다. Winlogbeat/Sysmon 로그도 같은 feature schema로 변환할 수 있습니다.
 
 피처 추출 코드는 아래 파일에 있습니다.
 

@@ -2,13 +2,19 @@
 
 ## 목적
 
-ML 파이프라인은 정적 PE feature가 아니라 Winlogbeat/Sysmon 로그에서 만들어진 동적 공격 체인 feature를 기반으로 XGBoost 모델을 학습합니다. 백엔드 탐지 로직과 모델 학습 feature를 맞추는 것이 핵심입니다.
+ML 파이프라인은 동적 행위 feature를 기반으로 XGBoost 모델을 학습합니다. 기본 학습 데이터는 `ransom.csv`이며, 이 파일 안의 `registry_*`, `network_*`, `processes_*`, `files_*` 컬럼을 백엔드 공격 체인 feature와 같은 8개 feature로 변환합니다. Winlogbeat/Sysmon 로그도 같은 schema로 변환할 수 있습니다.
 
-`ransom.csv`는 참고용 원본 데이터로 보관할 수 있지만, 현재 백엔드에 직접 연결되는 모델은 `ransom.csv`의 PE feature가 아니라 공격 체인 기반 feature를 사용합니다.
+정적 PE feature는 현재 백엔드 실시간 추론에서 직접 생성할 수 없으므로 모델 입력에서 제외합니다. 백엔드와 ML 모델의 입력 feature를 맞추기 위해 동적 행위 컬럼만 사용합니다.
 
 ## 입력 데이터
 
-기본 샘플 로그:
+기본 학습 CSV:
+
+```text
+ml/data/raw/ransom.csv
+```
+
+보조 샘플 로그:
 
 ```text
 collector/sample_inputs/winlogbeat_sample-20260415.jsonl
@@ -32,6 +38,16 @@ ml/src/preprocess.py
 ```
 
 처리 순서:
+
+```text
+ransom.csv
+-> dynamic behavior columns 선택
+-> backend feature schema로 변환
+-> label 생성
+-> features/train/test CSV 저장
+```
+
+Winlogbeat/Sysmon 로그를 사용하는 경우:
 
 ```text
 Winlogbeat JSON/JSONL
@@ -103,4 +119,4 @@ python evaluate.py
 
 ## 해석 시 주의점
 
-현재 평가 결과가 높게 나오더라도 샘플 수와 seed row의 영향을 함께 설명해야 합니다. 캡스톤 발표에서는 “운영 탐지 모델”이라기보다 “동적 행위 feature 기반 탐지 보조 모델의 프로토타입”으로 설명하는 것이 안전합니다.
+현재 모델은 `ransom.csv`의 동적 행위 컬럼을 백엔드 feature schema로 축약해서 학습합니다. 따라서 성능 수치는 해당 CSV와 현재 feature mapping 기준의 성능입니다. 운영 환경 일반화 성능을 주장하려면 더 많은 실제 Sysmon/Winlogbeat 로그와 샘플 단위 holdout 검증이 추가로 필요합니다.
