@@ -14,6 +14,34 @@ def safe_get(data: dict[str, Any], *keys: str) -> Any:
     return current
 
 
+def first_present(*values: Any) -> Any:
+    for value in values:
+        if value is not None:
+            return value
+    return None
+
+
+def event_data_from(event: dict[str, Any]) -> dict[str, Any]:
+    event_data = (
+        safe_get(event, "winlog", "event_data")
+        or event.get("event_data")
+        or event.get("EventData")
+        or {}
+    )
+    return event_data if isinstance(event_data, dict) else {}
+
+
+def event_value(event: dict[str, Any], event_data: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = event_data.get(key)
+        if value is not None:
+            return value
+        value = event.get(key)
+        if value is not None:
+            return value
+    return None
+
+
 def map_sysmon_event_name(event_id: str | None) -> str | None:
     mapping = {
         "1": "ProcessCreate",
@@ -41,33 +69,59 @@ def map_sysmon_event_name(event_id: str | None) -> str | None:
 
 
 def parse_common_event(event: dict[str, Any]) -> dict[str, Any]:
-    event_id = safe_get(event, "winlog", "event_id")
+    event_id = first_present(
+        safe_get(event, "winlog", "event_id"),
+        safe_get(event, "event", "code"),
+        event.get("event_id"),
+        event.get("EventID"),
+        event.get("EventId"),
+    )
+    provider_name = first_present(
+        safe_get(event, "winlog", "provider_name"),
+        safe_get(event, "event", "provider"),
+        event.get("provider_name"),
+        event.get("ProviderName"),
+        event.get("Provider"),
+    )
+    channel = first_present(
+        safe_get(event, "winlog", "channel"),
+        event.get("channel"),
+        event.get("Channel"),
+    )
+
+    if channel is None and str(provider_name or "").lower() == "microsoft-windows-sysmon":
+        channel = "Microsoft-Windows-Sysmon/Operational"
+
     return {
-        "timestamp": event.get("@timestamp"),
-        "message": event.get("message"),
-        "event_code": safe_get(event, "event", "code"),
+        "timestamp": first_present(event.get("@timestamp"), event.get("TimeCreated")),
+        "message": first_present(event.get("message"), event.get("Message")),
+        "event_code": first_present(safe_get(event, "event", "code"), event.get("EventID")),
         "event_action": safe_get(event, "event", "action"),
         "event_kind": safe_get(event, "event", "kind"),
-        "provider": safe_get(event, "event", "provider"),
-        "channel": safe_get(event, "winlog", "channel"),
+        "provider": first_present(safe_get(event, "event", "provider"), event.get("Provider")),
+        "channel": channel,
         "event_id": str(event_id) if event_id is not None else None,
-        "record_id": safe_get(event, "winlog", "record_id"),
-        "computer_name": safe_get(event, "winlog", "computer_name"),
-        "provider_name": safe_get(event, "winlog", "provider_name"),
-        "log_level": safe_get(event, "log", "level"),
+        "record_id": first_present(safe_get(event, "winlog", "record_id"), event.get("RecordId")),
+        "computer_name": first_present(
+            safe_get(event, "winlog", "computer_name"),
+            event.get("MachineName"),
+            event.get("ComputerName"),
+        ),
+        "provider_name": provider_name,
+        "log_level": first_present(safe_get(event, "log", "level"), event.get("Level")),
         "host_name": safe_get(event, "host", "name"),
         "host_hostname": safe_get(event, "host", "hostname"),
         "host_os": safe_get(event, "host", "os", "name"),
         "agent_type": safe_get(event, "agent", "type"),
         "agent_version": safe_get(event, "agent", "version"),
         "process_pid": safe_get(event, "winlog", "process", "pid"),
-        "raw_event_data": safe_get(event, "winlog", "event_data") or {},
+        "raw_event_data": event_data_from(event),
         "raw": event,
     }
 
 
 def parse_powershell_event(event: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
-    event_data = safe_get(event, "winlog", "event_data") or {}
+    event_data = event_data_from(event)
     base.update({
         "parsed_type": "powershell",
         "ps_param1": event_data.get("param1"),
@@ -81,35 +135,75 @@ def parse_powershell_event(event: dict[str, Any], base: dict[str, Any]) -> dict[
 
 
 def parse_sysmon_event(event: dict[str, Any], base: dict[str, Any]) -> dict[str, Any]:
-    event_data = safe_get(event, "winlog", "event_data") or {}
+    event_data = event_data_from(event)
     event_id = base.get("event_id")
     base.update({
         "parsed_type": "sysmon",
         "event_type_name": map_sysmon_event_name(event_id),
-        "process_guid": event_data.get("ProcessGuid"),
-        "process_id": event_data.get("ProcessId"),
-        "image": event_data.get("Image"),
-        "command_line": event_data.get("CommandLine"),
-        "current_directory": event_data.get("CurrentDirectory"),
-        "user": event_data.get("User"),
-        "logon_guid": event_data.get("LogonGuid"),
-        "logon_id": event_data.get("LogonId"),
-        "terminal_session_id": event_data.get("TerminalSessionId"),
-        "integrity_level": event_data.get("IntegrityLevel"),
-        "hashes": event_data.get("Hashes"),
-        "parent_process_guid": event_data.get("ParentProcessGuid"),
-        "parent_process_id": event_data.get("ParentProcessId"),
-        "parent_image": event_data.get("ParentImage"),
-        "parent_command_line": event_data.get("ParentCommandLine"),
-        "target_filename": event_data.get("TargetFilename"),
-        "creation_utc_time": event_data.get("CreationUtcTime"),
-        "destination_ip": event_data.get("DestinationIp"),
-        "destination_port": event_data.get("DestinationPort"),
-        "source_ip": event_data.get("SourceIp"),
-        "source_port": event_data.get("SourcePort"),
-        "protocol": event_data.get("Protocol"),
-        "target_object": event_data.get("TargetObject"),
-        "details": event_data.get("Details"),
+        "process_guid": event_value(event, event_data, "ProcessGuid", "process_guid"),
+        "process_id": event_value(event, event_data, "ProcessId", "ProcessID", "process_id"),
+        "image": event_value(event, event_data, "Image", "image"),
+        "command_line": event_value(event, event_data, "CommandLine", "command_line"),
+        "current_directory": event_value(event, event_data, "CurrentDirectory", "current_directory"),
+        "user": event_value(event, event_data, "User", "user"),
+        "logon_guid": event_value(event, event_data, "LogonGuid", "logon_guid"),
+        "logon_id": event_value(event, event_data, "LogonId", "logon_id"),
+        "terminal_session_id": event_value(
+            event,
+            event_data,
+            "TerminalSessionId",
+            "terminal_session_id",
+        ),
+        "integrity_level": event_value(event, event_data, "IntegrityLevel", "integrity_level"),
+        "hashes": event_value(event, event_data, "Hashes", "hashes"),
+        "parent_process_guid": event_value(
+            event,
+            event_data,
+            "ParentProcessGuid",
+            "parent_process_guid",
+        ),
+        "parent_process_id": event_value(
+            event,
+            event_data,
+            "ParentProcessId",
+            "ParentProcessID",
+            "parent_process_id",
+        ),
+        "parent_image": event_value(event, event_data, "ParentImage", "parent_image"),
+        "parent_command_line": event_value(
+            event,
+            event_data,
+            "ParentCommandLine",
+            "parent_command_line",
+        ),
+        "target_filename": event_value(
+            event,
+            event_data,
+            "TargetFilename",
+            "TargetFileName",
+            "target_filename",
+            "targetFilename",
+            "FileName",
+            "Filename",
+        ),
+        "creation_utc_time": event_value(
+            event,
+            event_data,
+            "CreationUtcTime",
+            "creation_utc_time",
+        ),
+        "destination_ip": event_value(event, event_data, "DestinationIp", "destination_ip"),
+        "destination_port": event_value(
+            event,
+            event_data,
+            "DestinationPort",
+            "destination_port",
+        ),
+        "source_ip": event_value(event, event_data, "SourceIp", "source_ip"),
+        "source_port": event_value(event, event_data, "SourcePort", "source_port"),
+        "protocol": event_value(event, event_data, "Protocol", "protocol"),
+        "target_object": event_value(event, event_data, "TargetObject", "target_object"),
+        "details": event_value(event, event_data, "Details", "details"),
     })
     return base
 
