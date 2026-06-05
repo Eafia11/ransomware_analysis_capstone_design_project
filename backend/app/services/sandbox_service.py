@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.core.config import settings
+from app.services.llm_report_service import LlmReportError, create_ai_analysis_report
 from app.services.report_service import analyze_winlogbeat_file
 from app.services.storage import (
     create_analysis,
@@ -517,6 +518,7 @@ def analyze_sandbox_logs(
             message="Sandbox completed, but log analysis failed.",
         )
 
+    result = attach_ai_report_if_available(analysis_id, result)
     set_analysis_result(analysis_id, result)
     return update_sandbox_session(
         session_id,
@@ -525,6 +527,40 @@ def analyze_sandbox_logs(
         analysis_error=None,
         message="Sandbox completed and collected logs were analyzed.",
     )
+
+
+def attach_ai_report_if_available(
+    analysis_id: str,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        report_response = create_ai_analysis_report(analysis_id, result)
+    except LlmReportError as exc:
+        return {
+            **result,
+            "ai_report_metadata": {
+                **result.get("ai_report_metadata", {}),
+                "status": "failed",
+                "error": str(exc),
+            },
+        }
+
+    return {
+        **result,
+        "ai_report": report_response["report"],
+        "ai_report_metadata": {
+            "provider": report_response["provider"],
+            "model": report_response["model"],
+            "response_id": report_response["response_id"],
+            "saved_path": report_response["saved_path"],
+            "metadata_path": report_response["metadata_path"],
+        },
+        "artifact_paths": {
+            **result.get("artifact_paths", {}),
+            "ai_report": report_response["saved_path"],
+            "ai_report_metadata": report_response["metadata_path"],
+        },
+    }
 
 
 def run_sandbox_session(

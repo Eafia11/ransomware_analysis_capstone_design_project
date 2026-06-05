@@ -185,6 +185,71 @@ def test_analyze_sandbox_logs_finds_matching_ingested_stream(monkeypatch, tmp_pa
     assert status_updates == [(updated["analysis_id"], "analyzing")]
 
 
+def test_analyze_sandbox_logs_attaches_ai_report(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "sandbox_upload_dir", tmp_path / "sandbox_uploads")
+    monkeypatch.setattr(settings, "sandbox_state_dir", tmp_path / "sandbox_sessions")
+    monkeypatch.setattr(settings, "ingest_dir", tmp_path / "ingested")
+
+    session = sandbox_service.create_sandbox_session(
+        filename="payload.exe",
+        content=b"MZ fake exe",
+        runtime_seconds=30,
+    )
+    session_id = session["session_id"]
+    ingested_file = settings.ingest_dir / "winhost-01.jsonl"
+    ingested_file.parent.mkdir(parents=True, exist_ok=True)
+    ingested_file.write_text(
+        '{"message":"C:\\\\NetGuardian\\\\Samples\\\\'
+        + session_id
+        + '\\\\payload.exe","winlog":{"event_id":1}}\n',
+        encoding="utf-8",
+    )
+
+    records = {}
+    monkeypatch.setattr(sandbox_service, "get_analysis", lambda analysis_id: None)
+    monkeypatch.setattr(
+        sandbox_service,
+        "create_analysis",
+        lambda analysis: records.setdefault(analysis["analysis_id"], analysis),
+    )
+    monkeypatch.setattr(sandbox_service, "set_analysis_status", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        sandbox_service,
+        "set_analysis_result",
+        lambda analysis_id, result: records[analysis_id].update(
+            {"status": "completed", "result": result}
+        )
+        or records[analysis_id],
+    )
+    monkeypatch.setattr(
+        sandbox_service,
+        "create_ai_analysis_report",
+        lambda analysis_id, result: {
+            "analysis_id": analysis_id,
+            "status": "completed",
+            "provider": "openai",
+            "model": "gpt-test",
+            "response_id": "resp_123",
+            "report": "AI sandbox report",
+            "saved_path": f"data/reports/{analysis_id}_ai_report.md",
+            "metadata_path": f"data/reports/{analysis_id}_ai_report_metadata.json",
+        },
+    )
+
+    updated = sandbox_service.analyze_sandbox_logs(
+        session_id,
+        analyzer_func=lambda *args, **kwargs: {
+            "summary": {"parsed_events": 1},
+            "llm_report": {"analysis_id": "sandbox-analysis"},
+            "artifact_paths": {"llm_report": "data/reports/input.json"},
+        },
+    )
+
+    assert updated["analysis_result"]["ai_report"] == "AI sandbox report"
+    assert updated["analysis_result"]["ai_report_metadata"]["response_id"] == "resp_123"
+    assert updated["analysis_result"]["artifact_paths"]["ai_report"].endswith("_ai_report.md")
+
+
 def test_analyze_sandbox_logs_uses_session_log_slice_after_baseline(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "sandbox_upload_dir", tmp_path / "sandbox_uploads")
     monkeypatch.setattr(settings, "sandbox_state_dir", tmp_path / "sandbox_sessions")
