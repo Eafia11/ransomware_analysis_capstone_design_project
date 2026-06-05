@@ -36,14 +36,21 @@ def ingest_winlogbeat_event(
             "status": "uploaded",
         })
     else:
-        status = existing["status"] if existing["status"] == "analyzing" else "uploaded"
+        existing_status = existing["status"]
+        if existing_status in {"analyzing", "completed"}:
+            status = existing_status
+            result = existing.get("result")
+        else:
+            status = "uploaded"
+            result = None
+
         analysis = update_analysis(
             resolved_analysis_id,
             filename=filename,
             saved_path=str(file_path),
             sha256=sha256,
             status=status,
-            result=None if status == "uploaded" else existing.get("result"),
+            result=result,
             error=None,
         )
 

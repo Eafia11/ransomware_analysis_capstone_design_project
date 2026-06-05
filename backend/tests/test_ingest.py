@@ -55,6 +55,50 @@ def test_ingest_winlogbeat_appends_events_and_returns_analysis(monkeypatch, tmp_
     assert len(tmp_path.joinpath("analysis-vm-01.jsonl").read_text(encoding="utf-8").splitlines()) == 2
 
 
+def test_ingest_winlogbeat_preserves_completed_analysis_result(monkeypatch, tmp_path):
+    records = {
+        "analysis-completed": {
+            "analysis_id": "analysis-completed",
+            "filename": "sandbox-win-01.jsonl",
+            "saved_path": str(tmp_path / "sandbox-win-01.jsonl"),
+            "sha256": "0" * 64,
+            "status": "completed",
+            "result": {
+                "summary": {"parsed_events": 3},
+                "llm_report": {"analysis_id": "analysis-completed"},
+            },
+            "error": None,
+        }
+    }
+
+    def fake_update_analysis(analysis_id, **updates):
+        records[analysis_id].update(updates)
+        return records[analysis_id]
+
+    monkeypatch.setattr(ingest_service.settings, "ingest_dir", tmp_path)
+    monkeypatch.setattr(ingest_service, "get_analysis", lambda analysis_id: records.get(analysis_id))
+    monkeypatch.setattr(ingest_service, "update_analysis", fake_update_analysis)
+
+    event = {
+        "@timestamp": "2026-05-29T10:00:00Z",
+        "winlog": {
+            "computer_name": "sandbox-win-01",
+            "channel": "Microsoft-Windows-Sysmon/Operational",
+            "event_id": 1,
+        },
+    }
+
+    response = ingest_service.ingest_winlogbeat_event(
+        event,
+        stream_id="sandbox-win-01",
+        analysis_id="analysis-completed",
+    )
+
+    assert response["status"] == "completed"
+    assert records["analysis-completed"]["status"] == "completed"
+    assert records["analysis-completed"]["result"]["llm_report"]["analysis_id"] == "analysis-completed"
+
+
 def test_ingest_winlogbeat_rejects_empty_body():
     client = TestClient(app)
 
